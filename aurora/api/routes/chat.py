@@ -1,6 +1,7 @@
 """Native chat API with SSE streaming."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ...agent.learner import try_extract_solution
 from ...agent.loop import AgentLoop
 from ...api.auth import require_api_key
 from ...config import get as get_cfg
@@ -62,8 +64,12 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     tools = build_registry(cfg)
     loop = AgentLoop(registry, tools, cfg)
 
+    auto_learn = getattr(getattr(cfg, "agent", None), "auto_learn", True)
+
     assistant_text_parts: list[str] = []
     thinking_parts: list[str] = []
+    tool_blocks: list[dict] = []   # ordered tool_use / tool_result for persistence
+    tool_log: list[dict] = []      # flattened log for learner
     input_tokens = 0
     output_tokens = 0
 
@@ -72,6 +78,9 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
 
         yield f"data: {json.dumps({'type': 'conv_id', 'conversation_id': conv_id})}\n\n"
 
+        # Track tool calls so we can pair them with results for the learner
+        pending_tools: dict[str, dict] = {}
+
         try:
             async for event in loop.run(history, model_id, injected_solutions=solutions, thinking=req.thinking):
                 etype = event.get("type")
@@ -79,16 +88,42 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                     assistant_text_parts.append(event["content"])
                 elif etype == "thinking":
                     thinking_parts.append(event["content"])
+                elif etype == "tool_call":
+                    pending_tools[event["id"]] = {
+                        "name": event["name"],
+                        "input": event.get("input", {}),
+                    }
+                    tool_blocks.append({
+                        "type": "tool_use",
+                        "id": event["id"],
+                        "name": event["name"],
+                        "input": event.get("input", {}),
+                    })
+                elif etype == "tool_result":
+                    tool_blocks.append({
+                        "type": "tool_result",
+                        "for_id": event.get("id", ""),
+                        "output": event.get("output", ""),
+                        "error": event.get("error", False),
+                    })
+                    tc = pending_tools.pop(event.get("id", ""), None)
+                    if tc:
+                        tool_log.append({
+                            "name": tc["name"],
+                            "input": tc["input"],
+                            "output": event.get("output", ""),
+                        })
                 elif etype == "usage":
-                    input_tokens = event.get("input_tokens", input_tokens)
-                    output_tokens = event.get("output_tokens", output_tokens)
+                    input_tokens += event.get("input_tokens", 0)
+                    output_tokens += event.get("output_tokens", 0)
                 elif etype == "done":
                     # Persist assistant response
                     full_text = "".join(assistant_text_parts)
                     full_thinking = "".join(thinking_parts)
-                    if full_text or full_thinking:
+                    if full_text or full_thinking or tool_blocks:
                         await store.add_message(
                             conv_id, "assistant", full_text,
+                            blocks=tool_blocks or None,
                             thinking=full_thinking or None,
                             input_tokens=input_tokens,
                             output_tokens=output_tokens,
@@ -100,12 +135,25 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                         title = req.message[:70] + ("…" if len(req.message) > 70 else "")
                         await store.update_conversation(conv_id, title)
 
-                    # Optionally save solution
+                    # Optionally save solution (manual)
                     if req.save_solution and req.solution_problem and req.solution_text:
                         await store.save_solution(
                             problem=req.solution_problem,
                             solution=req.solution_text,
                             source_conv_id=conv_id,
+                        )
+
+                    # Auto-learn: extract solution in the background
+                    if auto_learn and tool_log:
+                        asyncio.create_task(
+                            try_extract_solution(
+                                registry=registry,
+                                model_id=model_id,
+                                user_message=req.message,
+                                assistant_text=full_text,
+                                tool_log=tool_log,
+                                store=store,
+                            )
                         )
 
                 yield f"data: {json.dumps(event)}\n\n"
@@ -197,11 +245,72 @@ async def health():
 
 
 def _to_normalized(raw_msgs: list[dict]) -> list[NormalizedMessage]:
-    """Convert stored message dicts back to NormalizedMessages for the agent."""
+    """Convert stored message dicts back to NormalizedMessages for the agent.
+
+    For assistant messages with saved tool blocks, reconstruct the multi-message
+    tool-use history so the model sees the full context.
+    """
+    from ...providers.base import ContentBlock
+
     result: list[NormalizedMessage] = []
     for m in raw_msgs:
         role = m.get("role", "user")
         content = m.get("content", "")
-        if role in ("user", "assistant"):
-            result.append(NormalizedMessage(role=role, text=content))  # type: ignore[arg-type]
+        blocks = m.get("blocks") or []
+
+        if role == "user":
+            result.append(NormalizedMessage(role="user", text=content))
+
+        elif role == "assistant":
+            if not blocks:
+                result.append(NormalizedMessage(role="assistant", text=content))
+                continue
+
+            # Reconstruct tool iterations from saved blocks.
+            # Stream order: [tool_use, tool_use, …, tool_result, tool_result, …]
+            # repeating per iteration.  A tool_use after tool_results starts a new batch.
+            iterations: list[tuple[list[dict], list[dict]]] = []
+            cur_uses: list[dict] = []
+            cur_results: list[dict] = []
+
+            for blk in blocks:
+                if blk["type"] == "tool_use":
+                    if cur_results:
+                        iterations.append((cur_uses, cur_results))
+                        cur_uses, cur_results = [], []
+                    cur_uses.append(blk)
+                elif blk["type"] == "tool_result":
+                    cur_results.append(blk)
+            if cur_uses or cur_results:
+                iterations.append((cur_uses, cur_results))
+
+            for uses, results in iterations:
+                # Assistant turn: tool_use blocks
+                asst_blocks = [
+                    ContentBlock(
+                        type="tool_use",
+                        tool_use_id=u["id"],
+                        tool_name=u["name"],
+                        tool_input=u.get("input", {}),
+                    )
+                    for u in uses
+                ]
+                result.append(NormalizedMessage(role="assistant", blocks=asst_blocks))
+
+                # User turn: tool_result blocks
+                res_blocks = [
+                    ContentBlock(
+                        type="tool_result",
+                        tool_result_for_id=r["for_id"],
+                        tool_result_content=r.get("output", ""),
+                        tool_is_error=r.get("error", False),
+                    )
+                    for r in results
+                ]
+                result.append(NormalizedMessage(role="user", blocks=res_blocks))
+
+            # Final assistant text
+            if content:
+                result.append(NormalizedMessage(role="assistant", text=content))
+
     return result

@@ -106,5 +106,9 @@ memory:
 agent:
   max_tool_iterations: 15
   tool_timeout_seconds: 60
+  # Auto-learn: extract and save solutions from tool-use conversations.
+  # The agent makes a background LLM call after each tool-using turn to
+  # decide if the interaction is worth remembering.
+  auto_learn: true
   # Extra instructions appended to the system prompt (optional)
   system_prompt_extra: ""

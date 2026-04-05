@@ -210,7 +210,7 @@ async function loadConversation(id, title) {
       if (msg.role === 'user') {
         appendUserMessage(msg.content, msg.created_at);
       } else if (msg.role === 'assistant') {
-        appendAssistantMessage(msg.content, null, msg.created_at, msg.input_tokens, msg.output_tokens);
+        appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks);
         state.totalInputTokens += msg.input_tokens || 0;
         state.totalOutputTokens += msg.output_tokens || 0;
       }
@@ -262,7 +262,7 @@ function appendUserMessage(text, timestamp) {
   return msgEl;
 }
 
-function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok) {
+function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok, blocks) {
   const msgEl = document.createElement('div');
   msgEl.className = 'message assistant';
 
@@ -279,12 +279,48 @@ function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputT
     </div>
     <div class="message-body">
       ${thinkingText ? renderThinkingBlock(thinkingText) : ''}
+      ${renderSavedToolBlocks(blocks)}
       <div class="md-content">${marked.parse(text || '')}</div>
       ${usageBadge}
     </div>
   `;
   appendMessage(msgEl);
   return msgEl;
+}
+
+function renderSavedToolBlocks(blocks) {
+  if (!blocks || !blocks.length) return '';
+  // Pair tool_use with their tool_result by id
+  const results = {};
+  for (const blk of blocks) {
+    if (blk.type === 'tool_result') results[blk.for_id] = blk;
+  }
+  return blocks.filter(b => b.type === 'tool_use').map(tc => {
+    const res = results[tc.id];
+    const inputStr = JSON.stringify(tc.input || {}, null, 2);
+    const preview = tc.input?.command || tc.input?.query || tc.input?.url || tc.input?.path || '';
+    const previewHtml = preview
+      ? `<span class="tool-preview">${escHtml(preview.length > 80 ? preview.slice(0, 80) + '…' : preview)}</span>`
+      : '';
+    const statusHtml = res
+      ? `<span class="tool-status ${res.error ? 'error' : 'success'}">${res.error ? '✗ Error' : '✓ Done'}</span>`
+      : '';
+    const resultHtml = res
+      ? `<div class="tool-section"><div class="tool-section-label">Output</div><pre>${escHtml(res.output || '')}</pre></div>`
+      : '';
+    return `<div class="tool-block">
+      <div class="tool-header" onclick="toggleBlock(this)">
+        <span class="tool-icon">⚙</span>
+        <span class="tool-name">${escHtml(tc.name)}</span>
+        ${previewHtml}
+        ${statusHtml}
+      </div>
+      <div class="tool-body">
+        <div class="tool-section"><div class="tool-section-label">Input</div><pre>${escHtml(inputStr)}</pre></div>
+        ${resultHtml}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderThinkingBlock(text) {
