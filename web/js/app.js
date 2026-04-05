@@ -347,6 +347,8 @@ async function triggerLearn(btn, container, convId, msgId) {
   btn.disabled = true;
   btn.textContent = '🧠 Analyzing…';
 
+  const abort = new AbortController();
+
   try {
     const body = { conversation_id: convId };
     if (msgId != null) body.message_id = msgId;
@@ -354,6 +356,7 @@ async function triggerLearn(btn, container, convId, msgId) {
     const resp = await fetch(API('/api/learn'), {
       method: 'POST',
       headers: headers(),
+      signal: abort.signal,
       body: JSON.stringify(body),
     });
     if (!resp.ok) {
@@ -366,14 +369,23 @@ async function triggerLearn(btn, container, convId, msgId) {
     const lb = document.createElement('div');
     lb.className = 'learn-block open';
     lb.innerHTML = `
-      <div class="learn-header" onclick="toggleBlock(this)">
+      <div class="learn-header">
         <span class="learn-icon">🧠</span>
         <span class="learn-text">Analyzing for reusable solutions…</span>
+        <button class="learn-stop" title="Stop learning">✕</button>
       </div>
       <div class="learn-body">
         <div class="learn-thinking"></div>
         <div class="learn-output"></div>
       </div>`;
+    lb.querySelector('.learn-stop').addEventListener('click', (e) => {
+      e.stopPropagation();
+      abort.abort();
+    });
+    // Click header (but not stop button) to toggle
+    lb.querySelector('.learn-header').addEventListener('click', (e) => {
+      if (!e.target.closest('.learn-stop')) toggleBlock(lb.querySelector('.learn-header'));
+    });
     container.appendChild(lb);
     scrollToBottom();
 
@@ -402,19 +414,11 @@ async function triggerLearn(btn, container, convId, msgId) {
             lb.querySelector('.learn-output').textContent += ev.content;
             scrollToBottom();
           } else if (ev.status === 'saved') {
-            lb.classList.add('saved');
-            lb.classList.remove('open');
-            lb.querySelector('.learn-header').innerHTML =
-              `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(ev.title)}</strong></span>`;
-            scrollToBottom();
+            finishLearnBlock(lb, 'saved', `Learned: <strong>${escHtml(ev.title)}</strong>`);
           } else if (ev.status === 'skipped') {
-            lb.classList.remove('open');
-            lb.classList.add('skipped');
-            lb.querySelector('.learn-header').innerHTML =
-              `<span class="learn-icon">🧠</span> <span class="learn-text">Nothing worth saving this time</span>`;
+            finishLearnBlock(lb, 'skipped', 'Nothing worth saving this time');
           } else if (ev.status === 'error') {
-            lb.classList.add('error');
-            lb.querySelector('.learn-text').textContent = 'Learning failed';
+            finishLearnBlock(lb, 'error', 'Learning failed');
           }
         } else if (ev.type === 'done') {
           break;
@@ -422,10 +426,25 @@ async function triggerLearn(btn, container, convId, msgId) {
       }
     }
   } catch (err) {
-    btn.disabled = false;
-    btn.textContent = '🧠 Learn';
-    console.warn('Learn failed:', err);
+    if (err.name === 'AbortError') {
+      const lb = container.querySelector('.learn-block');
+      if (lb) finishLearnBlock(lb, 'skipped', 'Stopped by user');
+    } else {
+      btn.disabled = false;
+      btn.textContent = '🧠 Learn';
+      console.warn('Learn failed:', err);
+    }
   }
+}
+
+function finishLearnBlock(lb, status, message) {
+  lb.classList.remove('open');
+  lb.classList.add(status);
+  const stopBtn = lb.querySelector('.learn-stop');
+  if (stopBtn) stopBtn.remove();
+  lb.querySelector('.learn-header').innerHTML =
+    `<span class="learn-icon">🧠</span> <span class="learn-text">${message}</span>`;
+  scrollToBottom();
 }
 
 function renderThinkingBlock(text) {
@@ -696,42 +715,36 @@ async function sendMessage(text) {
             lb = document.createElement('div');
             lb.className = 'learn-block open';
             lb.innerHTML = `
-              <div class="learn-header" onclick="toggleBlock(this)">
+              <div class="learn-header">
                 <span class="learn-icon">🧠</span>
                 <span class="learn-text">Analyzing for reusable solutions…</span>
+                <button class="learn-stop" title="Stop learning">✕</button>
               </div>
               <div class="learn-body">
                 <div class="learn-thinking"></div>
                 <div class="learn-output"></div>
               </div>`;
+            lb.querySelector('.learn-stop').addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (_abortController) _abortController.abort();
+            });
+            lb.querySelector('.learn-header').addEventListener('click', (e) => {
+              if (!e.target.closest('.learn-stop')) toggleBlock(lb.querySelector('.learn-header'));
+            });
             streamBody.appendChild(lb);
             scrollToBottom();
           } else if (event.status === 'thinking' && lb) {
-            const el = lb.querySelector('.learn-thinking');
-            el.textContent += event.content;
+            lb.querySelector('.learn-thinking').textContent += event.content;
             scrollToBottom();
           } else if (event.status === 'text' && lb) {
-            const el = lb.querySelector('.learn-output');
-            el.textContent += event.content;
+            lb.querySelector('.learn-output').textContent += event.content;
             scrollToBottom();
           } else if (event.status === 'saved' && lb) {
-            lb.classList.add('saved');
-            lb.classList.remove('open');
-            lb.querySelector('.learn-header').innerHTML =
-              `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(event.title)}</strong></span>`;
-            scrollToBottom();
-          } else if (event.status === 'skipped') {
-            if (lb) {
-              lb.classList.remove('open');
-              lb.classList.add('skipped');
-              lb.querySelector('.learn-header').innerHTML =
-                `<span class="learn-icon">🧠</span> <span class="learn-text">Nothing worth saving this time</span>`;
-            }
-          } else if (event.status === 'error') {
-            if (lb) {
-              lb.classList.add('error');
-              lb.querySelector('.learn-text').textContent = 'Learning failed';
-            }
+            finishLearnBlock(lb, 'saved', `Learned: <strong>${escHtml(event.title)}</strong>`);
+          } else if (event.status === 'skipped' && lb) {
+            finishLearnBlock(lb, 'skipped', 'Nothing worth saving this time');
+          } else if (event.status === 'error' && lb) {
+            finishLearnBlock(lb, 'error', 'Learning failed');
           }
         }
 

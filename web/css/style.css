@@ -589,7 +589,13 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
 .learn-block.skipped { color: var(--text-dim); }
 .learn-block.error { color: var(--red); border-color: var(--red); }
 .learn-icon { font-size: 14px; }
+.learn-text { flex: 1; }
 .learn-text strong { color: var(--text); }
+.learn-stop {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 13px; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.learn-stop:hover { color: var(--red); }
 .btn-learn {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--bg-tertiary); border: 1px solid var(--border);
