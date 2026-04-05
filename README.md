@@ -1,6 +1,6 @@
 <div align="center">
 
-# Aurora
+# 🪼 Aurora
 
 A general-purpose AI assistant with Linux server administration capabilities.
 
