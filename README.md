@@ -1,6 +1,14 @@
-# Agent
+<div align="center">
 
-A general-purpose AI assistant with Linux server administration capabilities. Ask questions, diagnose problems, run commands on remote servers, search the web, and save files — all through a streaming chat interface backed by any LLM.
+# Aurora
+
+A general-purpose AI assistant with Linux server administration capabilities.
+
+Ask questions, diagnose problems, run commands on remote servers, search the web, and save files — all through a streaming chat interface backed by any LLM.
+
+<img width="866" height="674" alt="image" src="https://github.com/user-attachments/assets/d26449b0-f177-4e79-b800-c12dc731a0be" />
+
+</div>
 
 ## Features
 
