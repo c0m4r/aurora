@@ -16,6 +16,7 @@ const state = {
   totalOutputTokens: 0,
   theme:          localStorage.getItem('aurora_theme') || 'dark',
   thinking:       localStorage.getItem('aurora_thinking') !== 'false',
+  learn:          localStorage.getItem('aurora_learn') === 'true',
 };
 
 // ─── Marked + highlight.js setup ─────────────────────────────────────────────
@@ -125,6 +126,14 @@ thinkingToggleEl.addEventListener('change', () => {
   localStorage.setItem('aurora_thinking', state.thinking);
 });
 
+// ─── Learn toggle ─────────────────────────────────────────────────────────────
+const learnToggleEl = $('#learn-toggle');
+learnToggleEl.checked = state.learn;
+learnToggleEl.addEventListener('change', () => {
+  state.learn = learnToggleEl.checked;
+  localStorage.setItem('aurora_learn', state.learn);
+});
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 async function loadModels() {
   try {
@@ -210,7 +219,7 @@ async function loadConversation(id, title) {
       if (msg.role === 'user') {
         appendUserMessage(msg.content, msg.created_at);
       } else if (msg.role === 'assistant') {
-        appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks);
+        appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks, msg.id);
         state.totalInputTokens += msg.input_tokens || 0;
         state.totalOutputTokens += msg.output_tokens || 0;
       }
@@ -262,7 +271,7 @@ function appendUserMessage(text, timestamp) {
   return msgEl;
 }
 
-function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok, blocks) {
+function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok, blocks, msgId) {
   const msgEl = document.createElement('div');
   msgEl.className = 'message assistant';
 
@@ -284,6 +293,10 @@ function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputT
       ${usageBadge}
     </div>
   `;
+  // Learn button for past messages with tool blocks
+  if (blocks && blocks.some(b => b.type === 'tool_use')) {
+    appendLearnButton(msgEl.querySelector('.message-body'), state.conversationId, msgId);
+  }
   appendMessage(msgEl);
   return msgEl;
 }
@@ -323,6 +336,99 @@ function renderSavedToolBlocks(blocks) {
   }).join('');
 }
 
+function appendLearnButton(container, convId, msgId) {
+  const btn = document.createElement('button');
+  btn.className = 'btn-learn';
+  btn.innerHTML = '🧠 Learn';
+  btn.title = 'Extract a reusable solution from this response';
+  btn.addEventListener('click', () => triggerLearn(btn, container, convId, msgId));
+  container.appendChild(btn);
+}
+
+async function triggerLearn(btn, container, convId, msgId) {
+  btn.disabled = true;
+  btn.textContent = '🧠 Analyzing…';
+
+  try {
+    const body = { conversation_id: convId };
+    if (msgId != null) body.message_id = msgId;
+
+    const resp = await fetch(API('/api/learn'), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      btn.textContent = '🧠 Failed';
+      return;
+    }
+
+    // Replace button with a learn block
+    btn.remove();
+    const lb = document.createElement('div');
+    lb.className = 'learn-block open';
+    lb.innerHTML = `
+      <div class="learn-header" onclick="toggleBlock(this)">
+        <span class="learn-icon">🧠</span>
+        <span class="learn-text">Analyzing for reusable solutions…</span>
+      </div>
+      <div class="learn-body">
+        <div class="learn-thinking"></div>
+        <div class="learn-output"></div>
+      </div>`;
+    container.appendChild(lb);
+    scrollToBottom();
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let ssebuf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      ssebuf += decoder.decode(value, { stream: true });
+
+      let idx;
+      while ((idx = ssebuf.indexOf('\n\n')) !== -1) {
+        const chunk = ssebuf.slice(0, idx).trim();
+        ssebuf = ssebuf.slice(idx + 2);
+        if (!chunk.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(chunk.slice(6)); } catch { continue; }
+
+        if (ev.type === 'learn') {
+          if (ev.status === 'thinking') {
+            lb.querySelector('.learn-thinking').textContent += ev.content;
+            scrollToBottom();
+          } else if (ev.status === 'text') {
+            lb.querySelector('.learn-output').textContent += ev.content;
+            scrollToBottom();
+          } else if (ev.status === 'saved') {
+            lb.classList.add('saved');
+            lb.classList.remove('open');
+            lb.querySelector('.learn-header').innerHTML =
+              `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(ev.title)}</strong></span>`;
+            scrollToBottom();
+          } else if (ev.status === 'skipped') {
+            lb.remove();
+            // Re-add button so user can retry
+            appendLearnButton(container, convId, msgId);
+          } else if (ev.status === 'error') {
+            lb.classList.add('error');
+            lb.querySelector('.learn-text').textContent = 'Learning failed';
+          }
+        } else if (ev.type === 'done') {
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '🧠 Learn';
+    console.warn('Learn failed:', err);
+  }
+}
+
 function renderThinkingBlock(text) {
   return `<div class="thinking-block">
     <div class="thinking-header" onclick="toggleBlock(this)">
@@ -334,7 +440,7 @@ function renderThinkingBlock(text) {
 }
 
 function toggleBlock(header) {
-  header.closest('.thinking-block, .tool-block').classList.toggle('open');
+  header.closest('.thinking-block, .tool-block, .learn-block').classList.toggle('open');
 }
 window.toggleBlock = toggleBlock;
 
@@ -449,6 +555,7 @@ async function sendMessage(text) {
         conversation_id: state.conversationId,
         model: state.currentModel || undefined,
         thinking: state.thinking,
+        learn: state.learn || undefined,
       }),
     });
 
@@ -584,6 +691,46 @@ async function sendMessage(text) {
           }
         }
 
+        else if (t === 'learn') {
+          let lb = streamBody.querySelector('.learn-block');
+          if (event.status === 'extracting') {
+            lb = document.createElement('div');
+            lb.className = 'learn-block open';
+            lb.innerHTML = `
+              <div class="learn-header" onclick="toggleBlock(this)">
+                <span class="learn-icon">🧠</span>
+                <span class="learn-text">Analyzing for reusable solutions…</span>
+              </div>
+              <div class="learn-body">
+                <div class="learn-thinking"></div>
+                <div class="learn-output"></div>
+              </div>`;
+            streamBody.appendChild(lb);
+            scrollToBottom();
+          } else if (event.status === 'thinking' && lb) {
+            const el = lb.querySelector('.learn-thinking');
+            el.textContent += event.content;
+            scrollToBottom();
+          } else if (event.status === 'text' && lb) {
+            const el = lb.querySelector('.learn-output');
+            el.textContent += event.content;
+            scrollToBottom();
+          } else if (event.status === 'saved' && lb) {
+            lb.classList.add('saved');
+            lb.classList.remove('open');
+            lb.querySelector('.learn-header').innerHTML =
+              `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(event.title)}</strong></span>`;
+            scrollToBottom();
+          } else if (event.status === 'skipped') {
+            if (lb) lb.remove();
+          } else if (event.status === 'error') {
+            if (lb) {
+              lb.classList.add('error');
+              lb.querySelector('.learn-text').textContent = 'Learning failed';
+            }
+          }
+        }
+
         else if (t === 'usage') {
           const evIn = event.input_tokens || 0;
           const evOut = event.output_tokens || 0;
@@ -610,6 +757,10 @@ async function sendMessage(text) {
             badge.className = 'usage-badge';
             badge.textContent = `↑${inputTokens} ↓${outputTokens} tokens`;
             msgBody.appendChild(badge);
+          }
+          // Learn button if tools were used and auto-learn was off
+          if (Object.keys(toolBlocks).length && !state.learn) {
+            appendLearnButton(msgBody, state.conversationId);
           }
           // Continue button if max iterations hit
           if (hitMaxIterations) {

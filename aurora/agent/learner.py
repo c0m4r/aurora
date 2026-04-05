@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from ..memory.store import MemoryStore
 from ..providers.base import NormalizedMessage
@@ -46,15 +46,15 @@ If NOT worth saving:
 """
 
 
-async def try_extract_solution(
+async def run_extract(
     registry: ProviderRegistry,
     model_id: str,
     user_message: str,
     assistant_text: str,
     tool_log: list[dict],
     store: MemoryStore,
-) -> None:
-    """Background task: decide if a turn is worth remembering and save it."""
+) -> AsyncIterator[dict]:
+    """Stream learn events: extracting → text deltas → saved/skipped."""
     if not tool_log:
         return
 
@@ -75,56 +75,70 @@ async def try_extract_solution(
     )
 
     try:
-        text = await _call_llm(registry, model_id, prompt)
+        logger.info("Learner: extracting solution from %d tool interactions", len(tool_log))
+        yield {"type": "learn", "status": "extracting"}
+
+        # Stream the LLM response so the user sees it
+        messages = [NormalizedMessage(role="user", text=prompt)]
+        buf: list[str] = []
+        async for event in registry.stream(
+            model_id=model_id,
+            messages=messages,
+            tools=[],
+            system="You extract structured data from conversations. Output only valid JSON.",
+            thinking=True,
+            max_tokens=512,
+        ):
+            if event.type == "text_delta":
+                buf.append(event.delta)
+                yield {"type": "learn", "status": "text", "content": event.delta}
+            elif event.type == "thinking_delta":
+                yield {"type": "learn", "status": "thinking", "content": event.delta}
+
+        text = "".join(buf)
+        logger.debug("Learner: raw LLM response: %s", text[:500])
         result = _parse_json(text)
 
         if not result or not result.get("save"):
-            logger.debug("Learner: nothing to save")
+            logger.info("Learner: nothing worth saving")
+            yield {"type": "learn", "status": "skipped"}
             return
 
         problem = result.get("problem", "").strip()
         solution = result.get("solution", "").strip()
         if not problem or not solution:
+            yield {"type": "learn", "status": "skipped"}
             return
 
         # Dedup: check if a similar solution already exists
         existing = await store.search_solutions(problem, limit=3)
         for ex in existing:
-            # Rough overlap check — same title or very similar problem
             if (
                 ex.get("title", "").lower() == result.get("title", "").lower()
                 or _overlap(ex.get("problem", ""), problem) > 0.6
             ):
-                logger.debug("Learner: similar solution already exists (id=%s)", ex.get("id"))
+                logger.info("Learner: similar solution already exists (id=%s)", ex.get("id"))
+                yield {"type": "learn", "status": "skipped", "reason": "duplicate"}
                 return
 
+        title = result.get("title", problem[:60])
+        tags = result.get("tags", [])
         sid = await store.save_solution(
             problem=problem,
             solution=solution,
-            title=result.get("title", problem[:60]),
-            tags=result.get("tags", []),
+            title=title,
+            tags=tags,
         )
-        logger.info("Learner: auto-saved solution #%s — %s", sid, result.get("title", ""))
+        logger.info("Learner: auto-saved solution #%s — %s", sid, title)
+        yield {
+            "type": "learn", "status": "saved",
+            "id": sid, "title": title, "problem": problem,
+            "solution": solution, "tags": tags,
+        }
 
     except Exception:
-        logger.debug("Learner: extraction failed", exc_info=True)
-
-
-async def _call_llm(registry: ProviderRegistry, model_id: str, prompt: str) -> str:
-    """Make a simple one-shot LLM call and return the text."""
-    messages = [NormalizedMessage(role="user", text=prompt)]
-    buf: list[str] = []
-    async for event in registry.stream(
-        model_id=model_id,
-        messages=messages,
-        tools=[],
-        system="You extract structured data from conversations. Output only valid JSON.",
-        thinking=False,
-        max_tokens=512,
-    ):
-        if event.type == "text_delta":
-            buf.append(event.delta)
-    return "".join(buf)
+        logger.warning("Learner: extraction failed", exc_info=True)
+        yield {"type": "learn", "status": "error"}
 
 
 def _parse_json(text: str) -> dict | None:

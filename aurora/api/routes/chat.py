@@ -1,7 +1,6 @@
 """Native chat API with SSE streaming."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Optional
@@ -10,7 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...agent.learner import try_extract_solution
+from ...agent.learner import run_extract
 from ...agent.loop import AgentLoop
 from ...api.auth import require_api_key
 from ...config import get as get_cfg
@@ -28,6 +27,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     model: Optional[str] = None
     thinking: bool = True
+    learn: Optional[bool] = None  # None = use config default; True/False = override
     # Optional: immediately save a solution after this turn
     save_solution: bool = False
     solution_problem: Optional[str] = None
@@ -64,7 +64,8 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     tools = build_registry(cfg)
     loop = AgentLoop(registry, tools, cfg)
 
-    auto_learn = getattr(getattr(cfg, "agent", None), "auto_learn", True)
+    cfg_auto_learn = getattr(getattr(cfg, "agent", None), "auto_learn", False)
+    do_learn = req.learn if req.learn is not None else cfg_auto_learn
 
     assistant_text_parts: list[str] = []
     thinking_parts: list[str] = []
@@ -143,18 +144,17 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                             source_conv_id=conv_id,
                         )
 
-                    # Auto-learn: extract solution in the background
-                    if auto_learn and tool_log:
-                        asyncio.create_task(
-                            try_extract_solution(
-                                registry=registry,
-                                model_id=model_id,
-                                user_message=req.message,
-                                assistant_text=full_text,
-                                tool_log=tool_log,
-                                store=store,
-                            )
-                        )
+                    # Auto-learn: extract and save solution inline (visible to user)
+                    if do_learn and tool_log:
+                        async for learn_event in run_extract(
+                            registry=registry,
+                            model_id=model_id,
+                            user_message=req.message,
+                            assistant_text=full_text,
+                            tool_log=tool_log,
+                            store=store,
+                        ):
+                            yield f"data: {json.dumps(learn_event)}\n\n"
 
                 yield f"data: {json.dumps(event)}\n\n"
 
@@ -171,6 +171,76 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
             "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
         },
+    )
+
+
+class LearnRequest(BaseModel):
+    conversation_id: str
+    message_id: Optional[int] = None  # None = last tool-using message
+
+
+@router.post("/learn")
+async def learn_stream(req: LearnRequest, _auth: str = Depends(require_api_key)):
+    """One-shot learn: extract a solution from a specific assistant message."""
+    cfg = get_cfg()
+    store = get_store()
+    registry = get_registry()
+
+    msgs = await store.get_messages(req.conversation_id)
+
+    # Find target assistant message and its preceding user message
+    target = None
+    user_msg_text = ""
+    for i, m in enumerate(msgs):
+        if m["role"] != "assistant" or not m.get("blocks"):
+            continue
+        if req.message_id is not None and m.get("id") != req.message_id:
+            continue
+        target = m
+        # Walk back to find the preceding user message
+        for j in range(i - 1, -1, -1):
+            if msgs[j]["role"] == "user":
+                user_msg_text = msgs[j].get("content", "")
+                break
+
+    if not target:
+        async def empty():
+            yield f"data: {json.dumps({'type': 'learn', 'status': 'skipped', 'reason': 'no tool interactions found'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(empty(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Access-Control-Allow-Origin": "*"})
+
+    # Reconstruct tool_log from saved blocks
+    blocks = target["blocks"]
+    results_by_id = {b["for_id"]: b for b in blocks if b.get("type") == "tool_result"}
+    tool_log = []
+    for b in blocks:
+        if b.get("type") == "tool_use":
+            res = results_by_id.get(b["id"], {})
+            tool_log.append({
+                "name": b["name"],
+                "input": b.get("input", {}),
+                "output": res.get("output", ""),
+            })
+
+    model_id = target.get("model") or getattr(cfg, "default_model", "")
+
+    async def generate():
+        async for event in run_extract(
+            registry=registry,
+            model_id=model_id,
+            user_message=user_msg_text,
+            assistant_text=target.get("content", ""),
+            tool_log=tool_log,
+            store=store,
+        ):
+            yield f"data: {json.dumps(event)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Access-Control-Allow-Origin": "*"},
     )
 
 

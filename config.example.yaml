@@ -109,6 +109,6 @@ agent:
   # Auto-learn: extract and save solutions from tool-use conversations.
   # The agent makes a background LLM call after each tool-using turn to
   # decide if the interaction is worth remembering.
-  auto_learn: true
+  auto_learn: false
   # Extra instructions appended to the system prompt (optional)
   system_prompt_extra: ""
