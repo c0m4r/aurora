@@ -23,23 +23,21 @@ const state = {
 marked.setOptions({ breaks: true, gfm: true });
 const renderer = new marked.Renderer();
 
-renderer.code = (code, lang) => {
+renderer.code = function(token) {
+  const text = typeof token === 'string' ? token : (token.text || '');
+  const lang = typeof token === 'string' ? arguments[1] : (token.lang || '');
   let highlighted;
   try {
     if (typeof hljs !== 'undefined') {
       highlighted = (lang && hljs.getLanguage(lang))
-        ? hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
-        : hljs.highlightAuto(code).value;
+        ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(text).value;
     }
   } catch (_) { /* hljs unavailable or failed */ }
   if (!highlighted) {
-    // Plain fallback — escape HTML entities
-    highlighted = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    highlighted = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-  return `<div class="code-block-wrapper">
-    <pre><code class="hljs language-${lang || 'text'}">${highlighted}</code>
-    <button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre>
-  </div>`;
+  return `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div>`;
 };
 
 marked.use({ renderer });
@@ -410,9 +408,10 @@ async function triggerLearn(btn, container, convId, msgId) {
               `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(ev.title)}</strong></span>`;
             scrollToBottom();
           } else if (ev.status === 'skipped') {
-            lb.remove();
-            // Re-add button so user can retry
-            appendLearnButton(container, convId, msgId);
+            lb.classList.remove('open');
+            lb.classList.add('skipped');
+            lb.querySelector('.learn-header').innerHTML =
+              `<span class="learn-icon">🧠</span> <span class="learn-text">Nothing worth saving this time</span>`;
           } else if (ev.status === 'error') {
             lb.classList.add('error');
             lb.querySelector('.learn-text').textContent = 'Learning failed';
@@ -722,7 +721,12 @@ async function sendMessage(text) {
               `<span class="learn-icon">🧠</span> <span class="learn-text">Learned: <strong>${escHtml(event.title)}</strong></span>`;
             scrollToBottom();
           } else if (event.status === 'skipped') {
-            if (lb) lb.remove();
+            if (lb) {
+              lb.classList.remove('open');
+              lb.classList.add('skipped');
+              lb.querySelector('.learn-header').innerHTML =
+                `<span class="learn-icon">🧠</span> <span class="learn-text">Nothing worth saving this time</span>`;
+            }
           } else if (event.status === 'error') {
             if (lb) {
               lb.classList.add('error');

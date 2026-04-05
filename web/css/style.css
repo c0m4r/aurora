@@ -586,6 +586,7 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   color: var(--green); border-color: var(--green);
   background: rgba(63,185,80,0.06);
 }
+.learn-block.skipped { color: var(--text-dim); }
 .learn-block.error { color: var(--red); border-color: var(--red); }
 .learn-icon { font-size: 14px; }
 .learn-text strong { color: var(--text); }

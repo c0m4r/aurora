@@ -87,7 +87,7 @@ async def run_extract(
             tools=[],
             system="You extract structured data from conversations. Output only valid JSON.",
             thinking=True,
-            max_tokens=512,
+            max_tokens=4096,
         ):
             if event.type == "text_delta":
                 buf.append(event.delta)
