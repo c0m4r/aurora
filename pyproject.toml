@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurora"
+version = "1.0.0"
+description = "General purpose AI assistant"
+requires-python = ">=3.11"
+authors = [
+  { name = "c0m4r"}
+]
+maintainers = [
+  { name = "c0m4r"}
+]
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+
+[project.scripts]
+aurora-server = "aurora.api.app:run"
+aurora = "cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aurora*", "cli*"]

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aurora</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+  <!-- Syntax highlighting must load before marked so hljs is available in the renderer -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" id="hljs-theme" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css" id="hljs-theme-light" disabled />
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/highlight.min.js"></script>
+  <!-- Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">🪼 Aurora</span>
+        <button id="new-chat-btn" class="btn-icon" title="New conversation">＋</button>
+      </div>
+
+      <div class="sidebar-actions">
+        <select id="model-select" title="Select model">
+          <option value="">Loading models…</option>
+        </select>
+        <label class="thinking-toggle-label" title="Enable extended thinking / chain-of-thought">
+          <input type="checkbox" id="thinking-toggle" checked />
+          <span>💭 Thinking</span>
+        </label>
+      </div>
+
+      <nav id="conv-list" class="conv-list">
+        <!-- Populated by JS -->
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="theme-toggle" class="btn-text" title="Toggle dark/light mode">🌙 Dark</button>
+        <button id="solutions-btn" class="btn-text" title="Saved solutions">📚 Solutions</button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main id="main">
+      <header id="chat-header">
+        <button id="sidebar-toggle" class="btn-icon mobile-only" title="Toggle sidebar">☰</button>
+        <span id="chat-title">New Conversation</span>
+        <div class="header-actions">
+          <span id="token-display" class="token-count" title="Tokens used this session"></span>
+          <button id="copy-all-btn" class="btn-icon" title="Copy entire conversation">⎘</button>
+        </div>
+      </header>
+
+      <div id="messages" class="messages">
+        <div id="welcome" class="welcome">
+          <div class="welcome-icon">🪼</div>
+          <h2>Aurora</h2>
+          <p>A general-purpose AI assistant with Linux server access, web search, and local file storage.</p>
+          <div class="welcome-examples">
+            <button class="example-btn">What's going on in the world today?</button>
+            <button class="example-btn">What's the latest stable version of nginx?</button>
+            <button class="example-btn">Write a hello world bash script</button>
+            <button class="example-btn">What time it is?</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="input-area" class="input-area">
+        <div class="input-wrapper">
+          <textarea
+            id="user-input"
+            placeholder="Ask anything — servers, Linux, web, files…"
+            rows="1"
+            autocomplete="off"
+            spellcheck="true"
+          ></textarea>
+          <button id="send-btn" class="btn-send" title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+        <div class="input-hint">Enter to send · Shift+Enter for newline · Esc to stop</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Solutions modal -->
+  <div id="solutions-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Saved Solutions</h2>
+        <button class="modal-close btn-icon">✕</button>
+      </div>
+      <div id="solutions-list" class="solutions-list">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close btn-icon">✕</button>
+      </div>
+      <div class="settings-form">
+        <label>Server URL
+          <input id="setting-server-url" type="text" value="" placeholder="http://localhost:8000" />
+        </label>
+        <label>API Key
+          <input id="setting-api-key" type="password" placeholder="Leave empty if not configured" />
+        </label>
+        <button id="save-settings-btn" class="btn-primary">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/js/app.js" type="module"></script>
+</body>
+</html>

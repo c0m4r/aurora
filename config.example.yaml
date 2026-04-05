@@ -1,0 +1,110 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  # API key for CLI/API access. Can also be set via AURORA_API_KEY env var.
+  api_key: ""
+
+# ─── Model Providers ────────────────────────────────────────────────────────
+# Configure at least one. Models are referenced as "provider/model-id".
+providers:
+  # recommended models: gemma4, qwen3.5, gpt-oss
+  ollama:
+    enabled: true
+    base_url: "http://localhost:11434"
+    default_model: "qwen3.5:latest"
+
+  anthropic:
+    enabled: false
+    api_key: ""   # or set ANTHROPIC_API_KEY env var
+    default_model: "claude-sonnet-4-6"
+
+  openai:
+    enabled: false
+    api_key: ""   # or set OPENAI_API_KEY env var
+    base_url: "https://api.openai.com/v1"
+    default_model: "gpt-4o"
+
+  gemini:
+    enabled: false
+    api_key: ""   # or set GEMINI_API_KEY env var
+    # Uses Google's OpenAI-compatible endpoint automatically
+    default_model: "gemini-1.5-pro"
+
+  # Any OpenAI-compatible endpoint: vLLM, LM Studio, LiteLLM, etc.
+  custom: []
+  # custom:
+  #   - name: "my-vllm"
+  #     enabled: true
+  #     base_url: "http://gpu-server:8080/v1"
+  #     api_key: ""
+  #     default_model: "Meta-Llama-3.1-70B-Instruct"
+
+# Global default — format: "provider/model-id"
+default_model: "anthropic/claude-sonnet-4-6"
+
+# ─── Tools ──────────────────────────────────────────────────────────────────
+tools:
+  # ── SSH ─────────────────────────────────────────────────────────────────
+  ssh:
+    enabled: false
+
+    # Global write permission (default: false = read-only for all hosts).
+    # Set to true to allow the agent to run state-changing commands when
+    # the user explicitly requests it. Can be overridden per host below.
+    allow_writes: false
+
+    hosts: []
+    # Example hosts:
+    # hosts:
+    #   - name: "web-01"          # Friendly name used in tool calls
+    #     host: "10.0.0.10"
+    #     port: 22
+    #     user: "aurora"
+    #     key_file: "~/.ssh/id_ed25519"
+    #     # allow_writes: true    # Override for this host only
+    #
+    #   - name: "db-01"
+    #     host: "10.0.0.20"
+    #     user: "root"
+    #     key_file: "~/.ssh/id_ed25519"
+
+  # ── Web search & fetch ───────────────────────────────────────────────────
+  websearch:
+    enabled: true
+    max_results: 5
+    fetch_content: true         # Extract page text from top search results
+    max_content_length: 4000    # Characters per page
+
+    # Domains the agent may fetch directly (without a search query).
+    # null or omitted = use the built-in default list.
+    # Set to [] to disable direct URL fetching.
+    # Add your own domains to extend the defaults.
+    whitelist: null
+    # whitelist:
+    #   - github.com
+    #   - docs.python.org
+    #   - wiki.archlinux.org
+    #   - nvd.nist.gov
+    #   - your-internal-wiki.example.com   # internal docs
+
+  # ── RSS feed reader ──────────────────────────────────────────────────────
+  rss:
+    enabled: true
+    max_items: 10               # Default items returned per feed
+    # extra_feeds:              # Add custom feeds (name: url)
+    #   my_blog: "https://example.com/feed.xml"
+    #   lwn_weekly: "https://lwn.net/headlines/weekly/rss"
+
+# ─── Memory ─────────────────────────────────────────────────────────────────
+memory:
+  enabled: true
+  db_path: "~/.local/share/aurora/memory.db"
+  auto_save_prompt: true
+  max_injected_solutions: 3
+
+# ─── Agent Behaviour ────────────────────────────────────────────────────────
+agent:
+  max_tool_iterations: 15
+  tool_timeout_seconds: 60
+  # Extra instructions appended to the system prompt (optional)
+  system_prompt_extra: ""
