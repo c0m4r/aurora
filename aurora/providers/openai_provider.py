@@ -213,9 +213,9 @@ class OpenAIProvider(BaseProvider):
         if "temperature" in kwargs:
             params["temperature"] = kwargs["temperature"]
 
-        # Ollama: request thinking via extra_body; thinking arrives in delta.thinking
-        if use_thinking and self.name == "ollama":
-            params["extra_body"] = {"think": True}
+        # Ollama: explicitly set think parameter to enable/disable thinking
+        if self.name == "ollama":
+            params["extra_body"] = {"think": use_thinking}
 
         # Accumulate tool call deltas by index
         tc_buf: dict[int, dict] = {}
@@ -247,6 +247,7 @@ class OpenAIProvider(BaseProvider):
                     or getattr(delta, "thinking", None)
                     or (getattr(delta, "model_extra", None) or {}).get("reasoning")
                 )
+                # do not add use_thinking condition here
                 if thinking_text:
                     yield StreamEvent(type="thinking_delta", delta=thinking_text)
 
