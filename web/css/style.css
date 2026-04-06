@@ -791,3 +791,62 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
 
 /* ─── hljs override ───────────────────────────────────────────────────────── */
 .hljs { background: transparent !important; }
+
+/* ─── SVG preview block ──────────────────────────────────────────────────── */
+.svg-block {
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.svg-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.svg-toggle-btn {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.svg-toggle-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.svg-preview-container {
+  padding: 16px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  max-height: 500px;
+  overflow: auto;
+}
+.svg-preview-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.svg-block .code-block-wrapper {
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+.svg-block .code-block-wrapper pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}

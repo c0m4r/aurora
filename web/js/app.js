@@ -26,6 +26,11 @@ const renderer = new marked.Renderer();
 renderer.code = function(token) {
   const text = typeof token === 'string' ? token : (token.text || '');
   const lang = typeof token === 'string' ? arguments[1] : (token.lang || '');
+  const langLower = (lang || '').toLowerCase();
+
+  // Detect SVG content
+  const isSvg = langLower === 'svg' || langLower === 'xml' && /^\s*<svg[\s>]/i.test(text);
+
   let highlighted;
   try {
     if (typeof hljs !== 'undefined') {
@@ -37,10 +42,33 @@ renderer.code = function(token) {
   if (!highlighted) {
     highlighted = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-  return `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div>`;
+
+  const codeBlock = `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div>`;
+
+  if (isSvg) {
+    const svgId = 'svg-preview-' + Math.random().toString(36).substring(2, 10);
+    const escapedText = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return `<div class="svg-block"><div class="svg-preview-header"><span>SVG Preview</span><button class="svg-toggle-btn" onclick="toggleSvgPreview(this)">Hide</button></div><div class="svg-preview-container" id="${svgId}">${text}</div>${codeBlock}</div>`;
+  }
+
+  return codeBlock;
 };
 
 marked.use({ renderer });
+
+// ─── SVG preview toggle ───────────────────────────────────────────────────────
+function toggleSvgPreview(btn) {
+  const header = btn.closest('.svg-preview-header');
+  const container = header.nextElementSibling;
+  if (container.style.display === 'none') {
+    container.style.display = '';
+    btn.textContent = 'Hide';
+  } else {
+    container.style.display = 'none';
+    btn.textContent = 'Show';
+  }
+}
+window.toggleSvgPreview = toggleSvgPreview;
 
 // ─── Clipboard helper (works over plain HTTP too) ─────────────────────────────
 async function copyToClipboard(text) {
