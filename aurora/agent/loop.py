@@ -133,9 +133,9 @@ class AgentLoop:
                         serialized_history.append({
                             "role": msg.role,
                             "type": "tool_result",
-                            "for_id": blk.for_id,
+                            "for_id": blk.tool_result_for_id,
                             "content": blk.text or "",
-                            "error": bool(getattr(blk, "is_error", False)),
+                            "error": bool(getattr(blk, "tool_is_error", False)),
                         })
                     elif blk.type in ("image", "video"):
                         serialized_history.append({

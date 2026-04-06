@@ -12,6 +12,7 @@ const state = {
   currentModel:   localStorage.getItem('aurora_model') || '',
   conversationId: null,
   streaming:      false,
+  learning:       false,
   totalInputTokens:  0,
   totalOutputTokens: 0,
   theme:          localStorage.getItem('aurora_theme') || 'dark',
@@ -454,6 +455,7 @@ async function triggerLearn(btn, container, convId, msgId) {
   btn.textContent = '🧠 Analyzing…';
 
   const abort = new AbortController();
+  state.learning = true;
 
   try {
     const body = { conversation_id: convId };
@@ -493,7 +495,6 @@ async function triggerLearn(btn, container, convId, msgId) {
       if (!e.target.closest('.learn-stop')) toggleBlock(lb.querySelector('.learn-header'));
     });
     container.appendChild(lb);
-    scrollToBottom();
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -515,10 +516,8 @@ async function triggerLearn(btn, container, convId, msgId) {
         if (ev.type === 'learn') {
           if (ev.status === 'thinking') {
             lb.querySelector('.learn-thinking').textContent += ev.content;
-            scrollToBottom();
           } else if (ev.status === 'text') {
             lb.querySelector('.learn-output').textContent += ev.content;
-            scrollToBottom();
           } else if (ev.status === 'saved') {
             finishLearnBlock(lb, 'saved', `Learned: <strong>${escHtml(ev.title)}</strong>`);
           } else if (ev.status === 'skipped') {
@@ -540,6 +539,8 @@ async function triggerLearn(btn, container, convId, msgId) {
       btn.textContent = '🧠 Learn';
       console.warn('Learn failed:', err);
     }
+  } finally {
+    state.learning = false;
   }
 }
 
@@ -550,7 +551,7 @@ function finishLearnBlock(lb, status, message) {
   if (stopBtn) stopBtn.remove();
   lb.querySelector('.learn-header').innerHTML =
     `<span class="learn-icon">🧠</span> <span class="learn-text">${message}</span>`;
-  scrollToBottom();
+  // Don't force-scroll when learning finishes; let user stay where they are to see the result
 }
 
 function renderThinkingBlock(text) {
@@ -577,9 +578,29 @@ function appendMessage(el) {
   scrollToBottom();
 }
 
+// Track whether the user has manually scrolled up
+let _userScrolledUp = false;
+let _scrollThreshold = 150; // pixels from bottom to consider "at bottom"
+
+// Listen for scroll events to detect when user scrolls up
+(function initScrollListener() {
+  const m = $('#messages');
+  if (m) {
+    m.addEventListener('scroll', () => {
+      const isNearBottom = m.scrollHeight - m.scrollTop - m.clientHeight < _scrollThreshold;
+      _userScrolledUp = !isNearBottom;
+    });
+  }
+})();
+
 function scrollToBottom() {
   const m = $('#messages');
-  requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+  requestAnimationFrame(() => {
+    // Only auto-scroll if user is near bottom OR not in an active stream
+    if (!_userScrolledUp || (!state.streaming && !state.learning)) {
+      m.scrollTop = m.scrollHeight;
+    }
+  });
 }
 
 function copyMessage(btn) {
@@ -619,6 +640,9 @@ async function sendMessage(text, images, videos) {
   if (welcome) welcome.remove();
 
   appendUserMessage(text, images, videos);
+
+  // Reset scroll state when starting a new response
+  _userScrolledUp = false;
 
   state.streaming = true;
   _abortController = new AbortController();
