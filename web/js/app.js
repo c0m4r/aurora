@@ -215,7 +215,11 @@ async function loadConversation(id, title) {
 
     for (const msg of data.messages || []) {
       if (msg.role === 'user') {
-        appendUserMessage(msg.content, msg.created_at);
+        // Check if message has image blocks stored
+        const images = (msg.blocks || [])
+          .filter(b => b.type === 'image' && b.image_data)
+          .map(b => ({ data: b.image_data, media_type: b.image_media_type || 'image/png' }));
+        appendUserMessage(msg.content, images.length ? images : undefined);
       } else if (msg.role === 'assistant') {
         appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks, msg.id);
         state.totalInputTokens += msg.input_tokens || 0;
@@ -253,18 +257,13 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function appendUserMessage(text, timestamp) {
+function appendUserMessage(text, images) {
+  const imagesHtml = images && images.length
+    ? `<div class="message-images">${images.map(img => `<img src="data:${img.media_type};base64,${img.data}" alt="attached" />`).join('')}</div>`
+    : '';
   const msgEl = document.createElement('div');
   msgEl.className = 'message user';
-  msgEl.innerHTML = `
-    <div class="message-header">
-      <div class="message-avatar">🦄</div>
-      <span class="message-role">You</span>
-      <span class="message-time">${timestamp ? fmt_time(timestamp) : ''}</span>
-      <button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button>
-    </div>
-    <div class="message-body">${escHtml(text)}</div>
-  `;
+  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time">${fmt_time(new Date().toISOString())}</span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${escHtml(text)}</div>`;
   appendMessage(msgEl);
   return msgEl;
 }
@@ -501,14 +500,15 @@ $('#copy-all-btn').addEventListener('click', () => {
 // ─── Streaming chat ───────────────────────────────────────────────────────────
 let _abortController = null;
 
-async function sendMessage(text) {
-  if (!text.trim() || state.streaming) return;
+async function sendMessage(text, images) {
+  if (!text.trim() && (!images || images.length === 0)) return;
+  if (state.streaming) return;
 
   // Hide welcome
   const welcome = $('#welcome');
   if (welcome) welcome.remove();
 
-  appendUserMessage(text);
+  appendUserMessage(text, images);
 
   state.streaming = true;
   _abortController = new AbortController();
@@ -565,12 +565,17 @@ async function sendMessage(text) {
   let hitMaxIterations = false;
 
   try {
+    const imagePayload = images && images.length
+      ? images.map(img => ({ data: img.data, media_type: img.media_type }))
+      : undefined;
+
     const resp = await fetch(API('/api/chat/stream'), {
       method: 'POST',
       headers: headers(),
       signal: _abortController.signal,
       body: JSON.stringify({
         message: text,
+        images: imagePayload,
         conversation_id: state.conversationId,
         model: state.currentModel || undefined,
         thinking: state.thinking,
@@ -851,6 +856,167 @@ async function sendMessage(text) {
   }
 }
 
+// ─── Image upload state ───────────────────────────────────────────────────────
+const pendingImages = []; // Array of { data, media_type, dataUrl }
+const MAX_IMAGES = 10;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+
+const previewContainer = $('#image-preview-container');
+const imageFileInput = $('#image-file-input');
+const imageUploadBtn = $('#image-upload-btn');
+const dragOverlay = $('#drag-overlay');
+
+/**
+ * Read a File, compress if needed, and return base64 data + media_type + dataUrl.
+ * Returns null if the file is not a valid image.
+ */
+async function fileToImageData(file) {
+  if (!file.type.startsWith('image/')) return null;
+  const allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  if (!allowed.includes(file.type)) return null;
+  if (file.size > MAX_IMAGE_SIZE) {
+    console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB`);
+    return null;
+  }
+
+  // Try to compress large JPEGs via canvas
+  let dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.readAsDataURL(file);
+  });
+
+  // Compress if > 4MB or very large dimensions
+  if (file.size > 4 * 1024 * 1024 || file.type === 'image/gif') {
+    try {
+      const img = new Image();
+      dataUrl = await new Promise((resolve, reject) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          const maxDim = 2048;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/png', 0.85));
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+      URL.revokeObjectURL(img.src);
+    } catch (_) {
+      // Fallback to original
+    }
+  }
+
+  const mediaType = dataUrl.startsWith('data:image/png') ? 'image/png'
+    : dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg') ? 'image/jpeg'
+    : dataUrl.startsWith('data:image/gif') ? 'image/gif'
+    : dataUrl.startsWith('data:image/webp') ? 'image/webp'
+    : 'image/png';
+
+  const b64 = dataUrl.split(',')[1];
+  return { data: b64, media_type: mediaType, dataUrl };
+}
+
+/**
+ * Render the pending image previews.
+ */
+function renderImagePreviews() {
+  previewContainer.innerHTML = '';
+  if (pendingImages.length === 0) {
+    previewContainer.classList.add('hidden');
+    return;
+  }
+  previewContainer.classList.remove('hidden');
+  pendingImages.forEach((img, idx) => {
+    const item = document.createElement('div');
+    item.className = 'image-preview-item';
+    item.innerHTML = `<img src="${img.dataUrl}" alt="Attached image" />
+      <button class="image-preview-remove" data-idx="${idx}" title="Remove">✕</button>`;
+    item.querySelector('.image-preview-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      pendingImages.splice(idx, 1);
+      renderImagePreviews();
+    });
+    previewContainer.appendChild(item);
+  });
+}
+
+/**
+ * Handle file selection from the file input or drag-drop.
+ */
+async function handleImageFiles(files) {
+  const fileArray = Array.from(files);
+  for (const file of fileArray) {
+    if (pendingImages.length >= MAX_IMAGES) break;
+    const imgData = await fileToImageData(file);
+    if (imgData) pendingImages.push(imgData);
+  }
+  renderImagePreviews();
+}
+
+// File button
+imageUploadBtn.addEventListener('click', () => imageFileInput.click());
+imageFileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) handleImageFiles(e.target.files);
+  e.target.value = ''; // Reset so the same file can be re-selected
+});
+
+// Paste handler
+document.addEventListener('paste', (e) => {
+  // Don't intercept if user is in a modal or not in input area context
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const imageFiles = [];
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length) {
+    e.preventDefault();
+    handleImageFiles(imageFiles);
+    inputEl.focus();
+  }
+});
+
+// Drag-and-drop
+let dragCounter = 0; // Prevent flicker from nested drag events
+
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragCounter++;
+  dragOverlay.classList.add('active');
+});
+
+document.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
+    dragOverlay.classList.remove('active');
+  }
+});
+
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+});
+
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragCounter = 0;
+  dragOverlay.classList.remove('active');
+  if (e.dataTransfer?.files?.length) {
+    handleImageFiles(e.dataTransfer.files);
+  }
+});
+
 // ─── Input handling ───────────────────────────────────────────────────────────
 const inputEl = $('#user-input');
 const sendBtn = $('#send-btn');
@@ -884,10 +1050,13 @@ sendBtn.addEventListener('click', () => {
 
 function doSend() {
   const text = inputEl.value.trim();
-  if (!text || state.streaming) return;
+  if ((!text && pendingImages.length === 0) || state.streaming) return;
   inputEl.value = '';
   inputEl.style.height = 'auto';
-  sendMessage(text);
+  const images = [...pendingImages];
+  pendingImages.length = 0;
+  renderImagePreviews();
+  sendMessage(text || 'See attached image', images);
 }
 
 function stopStream() {
@@ -899,6 +1068,7 @@ function setStreamingUI(streaming) {
   sendBtn.innerHTML = streaming ? STOP_ICON : SEND_ICON;
   sendBtn.title = streaming ? 'Stop (Esc)' : 'Send (Enter)';
   sendBtn.classList.toggle('btn-send-stop', streaming);
+  imageUploadBtn.disabled = streaming;
   if (!streaming) inputEl.focus();
 }
 

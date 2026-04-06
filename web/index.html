@@ -71,7 +71,14 @@
       </div>
 
       <div id="input-area" class="input-area">
+        <!-- Drag-drop overlay -->
+        <div id="drag-overlay" class="drag-overlay">📷 Drop image here</div>
+        <!-- Image preview area -->
+        <div id="image-preview-container" class="image-preview-container hidden"></div>
+
         <div class="input-wrapper">
+          <button id="image-upload-btn" class="btn-icon" title="Attach image">🖼</button>
+          <input type="file" id="image-file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
           <textarea
             id="user-input"
             placeholder="Ask anything — servers, Linux, web, files…"
@@ -86,7 +93,7 @@
             </svg>
           </button>
         </div>
-        <div class="input-hint">Enter to send · Shift+Enter for newline · Esc to stop</div>
+        <div class="input-hint">Enter to send · Shift+Enter for newline · Esc to stop · Paste or drop images</div>
       </div>
     </main>
   </div>
