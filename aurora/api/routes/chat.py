@@ -41,6 +41,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     thinking: bool = True
     learn: Optional[bool] = None  # None = use config default; True/False = override
+    debug: bool = False
     # Optional: immediately save a solution after this turn
     save_solution: bool = False
     solution_problem: Optional[str] = None
@@ -129,7 +130,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
         pending_tools: dict[str, dict] = {}
 
         try:
-            async for event in loop.run(history, model_id, injected_solutions=solutions, thinking=req.thinking):
+            async for event in loop.run(history, model_id, injected_solutions=solutions, thinking=req.thinking, debug=req.debug):
                 etype = event.get("type")
                 if etype == "text":
                     assistant_text_parts.append(event["content"])
@@ -160,6 +161,18 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                             "input": tc["input"],
                             "output": event.get("output", ""),
                         })
+                elif etype == "debug":
+                    # Pass through debug payload to frontend — not persisted
+                    try:
+                        payload = json.dumps(event)
+                        logger.info("Debug event forwarded to frontend (system=%d chars, tools=%d, history=%d)",
+                                    len(event.get("system", "")),
+                                    len(event.get("tools", [])),
+                                    len(event.get("history", [])))
+                        yield f"data: {payload}\n\n"
+                    except Exception as exc:
+                        logger.warning("Failed to serialize debug event: %s", exc)
+                    continue
                 elif etype == "usage":
                     input_tokens += event.get("input_tokens", 0)
                     output_tokens += event.get("output_tokens", 0)

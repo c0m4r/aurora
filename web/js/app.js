@@ -17,6 +17,7 @@ const state = {
   theme:          localStorage.getItem('aurora_theme') || 'dark',
   thinking:       localStorage.getItem('aurora_thinking') !== 'false',
   learn:          localStorage.getItem('aurora_learn') === 'true',
+  debug:          localStorage.getItem('aurora_debug') === 'true',
 };
 
 // ─── Marked + highlight.js setup ─────────────────────────────────────────────
@@ -69,6 +70,16 @@ function toggleSvgPreview(btn) {
   }
 }
 window.toggleSvgPreview = toggleSvgPreview;
+
+// ─── JSON syntax highlight via hljs ─────────────────────────────────────────
+function hljsSyntaxHighlight(jsonStr) {
+  if (typeof hljs !== 'undefined') {
+    try {
+      return hljs.highlight(jsonStr, { language: 'json' }).value;
+    } catch (_) {}
+  }
+  return jsonStr.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 // ─── Clipboard helper (works over plain HTTP too) ─────────────────────────────
 async function copyToClipboard(text) {
@@ -180,6 +191,14 @@ learnToggleEl.checked = state.learn;
 learnToggleEl.addEventListener('change', () => {
   state.learn = learnToggleEl.checked;
   localStorage.setItem('aurora_learn', state.learn);
+});
+
+// ─── Debug toggle ─────────────────────────────────────────────────────────────
+const debugToggleEl = $('#debug-toggle');
+debugToggleEl.checked = state.debug;
+debugToggleEl.addEventListener('change', () => {
+  state.debug = debugToggleEl.checked;
+  localStorage.setItem('aurora_debug', state.debug);
 });
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -545,7 +564,8 @@ function renderThinkingBlock(text) {
 }
 
 function toggleBlock(header) {
-  header.closest('.thinking-block, .tool-block, .learn-block').classList.toggle('open');
+  const block = header.closest('.thinking-block, .tool-block, .learn-block, .debug-block, .svg-block, .learn-block');
+  if (block) block.classList.toggle('open');
 }
 window.toggleBlock = toggleBlock;
 
@@ -622,6 +642,42 @@ async function sendMessage(text, images, videos) {
 
   const streamBody = msgEl.querySelector('.stream-body');
 
+  // Debug: show the full API payload sent to the model
+  if (state.debug) {
+    const imagePayload = images && images.length
+      ? images.map(img => ({ data: img.data, media_type: img.media_type }))
+      : undefined;
+    const videoPayload = videos && videos.length
+      ? videos.map(vid => ({ data: vid.data, media_type: vid.media_type }))
+      : undefined;
+
+    const payload = {
+      message: text,
+      ...(imagePayload && imagePayload.length ? { images: imagePayload } : {}),
+      ...(videoPayload && videoPayload.length ? { videos: videoPayload } : {}),
+      ...(state.conversationId ? { conversation_id: state.conversationId } : {}),
+      ...(state.currentModel ? { model: state.currentModel } : {}),
+      thinking: state.thinking,
+      learn: state.learn || undefined,
+      debug: true,
+    };
+
+    const payloadStr = JSON.stringify(payload, null, 2);
+    const highlighted = hljsSyntaxHighlight(payloadStr);
+
+    const debugBlock = document.createElement('div');
+    debugBlock.className = 'debug-block';
+    debugBlock.innerHTML = `
+      <div class="debug-header" onclick="toggleBlock(this)">
+        <span class="debug-icon">🐛</span>
+        <span class="debug-label">Debug — Request Payload</span>
+        <span class="debug-toggle">▶</span>
+      </div>
+      <div class="debug-body"><pre class="debug-json hljs">${highlighted}</pre></div>
+    `;
+    streamBody.appendChild(debugBlock);
+  }
+
   // currentThinkingBlock / currentTextEl: the active block in stream-body
   let currentThinkingBlock = null;
   let thinkingBuf = '';
@@ -675,6 +731,7 @@ async function sendMessage(text, images, videos) {
         model: state.currentModel || undefined,
         thinking: state.thinking,
         learn: state.learn || undefined,
+        debug: state.debug || undefined,
       }),
     });
 
@@ -706,7 +763,10 @@ async function sendMessage(text, images, videos) {
         if (raw === '[DONE]') break;
 
         let event;
-        try { event = JSON.parse(raw); } catch { continue; }
+        try { event = JSON.parse(raw); } catch {
+          console.warn('[SSE] Failed to parse JSON, length:', raw.length, raw.slice(0, 100));
+          continue;
+        }
 
         const t = event.type;
 
@@ -714,6 +774,30 @@ async function sendMessage(text, images, videos) {
           state.conversationId = event.conversation_id;
           updateActiveConv();
           loadConversations();
+        }
+
+        else if (t === 'debug') {
+          // Render full debug payload from the backend
+          const payload = {
+            system: event.system,
+            tools: event.tools,
+            history: event.history,
+          };
+          const jsonStr = JSON.stringify(payload, null, 2);
+          const highlighted = hljsSyntaxHighlight(jsonStr);
+
+          const debugBlock = document.createElement('div');
+          debugBlock.className = 'debug-block';
+          debugBlock.innerHTML = `
+            <div class="debug-header" onclick="toggleBlock(this)">
+              <span class="debug-icon">🐛</span>
+              <span class="debug-label">Debug — Full Model Payload</span>
+              <span class="debug-toggle">▶</span>
+            </div>
+            <div class="debug-body"><pre class="debug-json hljs">${highlighted}</pre></div>
+          `;
+          streamBody.appendChild(debugBlock);
+          scrollToBottom();
         }
 
         else if (t === 'thinking') {
@@ -949,6 +1033,11 @@ async function sendMessage(text, images, videos) {
           errEl.textContent = `⚠ ${event.content}`;
           streamBody.appendChild(errEl);
           break;
+        }
+
+        else {
+          // Unknown event type — log for debugging
+          if (t) console.log('[SSE] Unknown event type:', t, event);
         }
       }
     }

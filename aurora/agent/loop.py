@@ -102,6 +102,7 @@ class AgentLoop:
         messages: list[NormalizedMessage],
         model_id: str,
         injected_solutions: list[dict] | None = None,
+        debug: bool = False,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
         system = _build_system(self.cfg, injected_solutions or [])
@@ -109,6 +110,48 @@ class AgentLoop:
 
         # Working message history (mutable copy)
         history = list(messages)
+
+        # Emit debug payload at the start
+        if debug:
+            # Serialize history into a simple dict format
+            serialized_history = []
+            for msg in history:
+                for blk in msg.blocks:
+                    if blk.type == "text":
+                        serialized_history.append({"role": msg.role, "content": blk.text})
+                    elif blk.type == "thinking":
+                        serialized_history.append({"role": msg.role, "type": "thinking", "content": blk.text})
+                    elif blk.type == "tool_use":
+                        serialized_history.append({
+                            "role": msg.role,
+                            "type": "tool_use",
+                            "id": blk.tool_use_id,
+                            "name": blk.tool_name,
+                            "input": blk.tool_input,
+                        })
+                    elif blk.type == "tool_result":
+                        serialized_history.append({
+                            "role": msg.role,
+                            "type": "tool_result",
+                            "for_id": blk.for_id,
+                            "content": blk.text or "",
+                            "error": bool(getattr(blk, "is_error", False)),
+                        })
+                    elif blk.type in ("image", "video"):
+                        serialized_history.append({
+                            "role": msg.role,
+                            "type": blk.type,
+                            "media_type": getattr(blk, "media_type", ""),
+                            "data_length": len(getattr(blk, "data", "")),
+                        })
+
+            yield {
+                "type": "debug",
+                "system": system,
+                "tools": tool_schemas,
+                "history": serialized_history,
+            }
+            logger.debug("Debug payload emitted (%d history messages)", len(serialized_history))
 
         for iteration in range(self._max_iter):
             tool_calls_this_turn: list[dict] = []
