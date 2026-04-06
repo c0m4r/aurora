@@ -1152,6 +1152,7 @@ function createWelcome() {
     <h2>Agent</h2>
     <p>A general-purpose AI assistant with Linux server access, web search, and local file storage.</p>
     <div class="welcome-examples">
+      <button class="example-btn">briefly describe the tools you're able to use</button>
       <button class="example-btn">What's going on in the world today?</button>
       <button class="example-btn">What's the latest stable version of nginx?</button>
       <button class="example-btn">Write a hello world bash script</button>
