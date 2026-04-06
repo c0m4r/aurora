@@ -14,7 +14,7 @@ from ...agent.loop import AgentLoop
 from ...api.auth import require_api_key
 from ...config import get as get_cfg
 from ...memory.store import get_store
-from ...providers.base import NormalizedMessage
+from ...providers.base import ContentBlock, NormalizedMessage
 from ...providers.registry import get_registry
 from ...tools.registry import build_registry
 
@@ -22,8 +22,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+class ImageData(BaseModel):
+    data: str         # base64-encoded
+    media_type: str   # e.g. "image/png"
+
+
 class ChatRequest(BaseModel):
     message: str
+    images: Optional[list[ImageData]] = None
     conversation_id: Optional[str] = None
     model: Optional[str] = None
     thinking: bool = True
@@ -57,6 +63,17 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     # Load history and convert to NormalizedMessages
     raw_msgs = await store.get_messages(conv_id)
     history = _to_normalized(raw_msgs)
+
+    # Inject images into the last user message (images before text for optimal performance)
+    if req.images and history and history[-1].role == "user":
+        last = history[-1]
+        img_blocks = [
+            ContentBlock(type="image", image_data=img.data, image_media_type=img.media_type)
+            for img in req.images
+        ]
+        text_block = ContentBlock(type="text", text=last.text or "")
+        last.text = None
+        last.blocks = img_blocks + [text_block]
 
     # Inject relevant past solutions into system prompt
     solutions = await store.search_solutions(req.message, limit=3)

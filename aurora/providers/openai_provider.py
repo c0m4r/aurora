@@ -89,13 +89,19 @@ def _to_api_messages(messages: list[NormalizedMessage], system: str) -> list[dic
             continue
 
         # Blocks present — need special handling
-        text_parts: list[str] = []
+        content_parts: list[dict] = []
         tool_calls: list[dict] = []
         tool_results: list[dict] = []
 
         for blk in msg.blocks:
-            if blk.type in ("text", "thinking") and blk.text:
-                text_parts.append(blk.text)
+            if blk.type == "image" and blk.image_data:
+                mt = blk.image_media_type or "image/png"
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mt};base64,{blk.image_data}"},
+                })
+            elif blk.type in ("text", "thinking") and blk.text:
+                content_parts.append({"type": "text", "text": blk.text})
             elif blk.type == "tool_use":
                 tool_calls.append({
                     "id": blk.tool_use_id or "",
@@ -114,10 +120,14 @@ def _to_api_messages(messages: list[NormalizedMessage], system: str) -> list[dic
 
         if tool_results:
             result.extend(tool_results)
-        elif tool_calls or text_parts:
+        elif tool_calls or content_parts:
             api_msg: dict[str, Any] = {"role": msg.role}
-            if text_parts:
-                api_msg["content"] = "\n".join(text_parts)
+            # Use content array when images are present, plain string otherwise
+            has_images = any(p.get("type") == "image_url" for p in content_parts)
+            if content_parts and has_images:
+                api_msg["content"] = content_parts
+            elif content_parts:
+                api_msg["content"] = "\n".join(p["text"] for p in content_parts if p.get("text"))
             else:
                 api_msg["content"] = None
             if tool_calls:

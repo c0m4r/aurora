@@ -44,7 +44,16 @@ def _to_api_messages(messages: list[NormalizedMessage]) -> list[dict]:
 
         content = []
         for blk in msg.blocks:
-            if blk.type == "text" and blk.text:
+            if blk.type == "image" and blk.image_data:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": blk.image_media_type or "image/png",
+                        "data": blk.image_data,
+                    },
+                })
+            elif blk.type == "text" and blk.text:
                 content.append({"type": "text", "text": blk.text})
             elif blk.type == "thinking" and blk.text:
                 content.append({"type": "thinking", "thinking": blk.text})

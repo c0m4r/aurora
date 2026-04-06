@@ -912,18 +912,31 @@ $('#solutions-btn').addEventListener('click', async () => {
       listEl.innerHTML = '<p style="color:var(--text-muted);padding:12px">No saved solutions yet.</p>';
       return;
     }
-    listEl.innerHTML = sols.map(s => `
-      <div class="solution-card">
+    listEl.innerHTML = '';
+    for (const s of sols) {
+      const card = document.createElement('div');
+      card.className = 'solution-card';
+      card.innerHTML = `
         <h4>${escHtml(s.title || s.problem.slice(0, 60))}</h4>
         <p><strong>Problem:</strong> ${escHtml(s.problem)}</p>
         <p><strong>Solution:</strong> ${escHtml(s.solution.slice(0, 200))}${s.solution.length > 200 ? '…' : ''}</p>
         ${s.tags?.length ? `<div class="solution-tags">${s.tags.map(t => `<span class="solution-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
-        <div class="solution-actions">
-          <button class="btn-icon" onclick="deleteSolution(${s.id}, this)" title="Delete">🗑</button>
-          <button class="btn-icon" onclick="insertSolution(${JSON.stringify(escHtml(s.problem))})" title="Use as prompt">↩ Ask</button>
-        </div>
-      </div>
-    `).join('');
+        <div class="solution-actions"></div>`;
+      const actions = card.querySelector('.solution-actions');
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-icon';
+      delBtn.textContent = '🗑';
+      delBtn.title = 'Delete';
+      delBtn.addEventListener('click', () => deleteSolution(s.id, delBtn));
+      const askBtn = document.createElement('button');
+      askBtn.className = 'btn-icon';
+      askBtn.textContent = '↩ Ask';
+      askBtn.title = 'Use as prompt';
+      askBtn.addEventListener('click', () => insertSolution(s.problem));
+      actions.appendChild(delBtn);
+      actions.appendChild(askBtn);
+      listEl.appendChild(card);
+    }
   } catch (e) {
     listEl.textContent = 'Error loading solutions.';
   }
