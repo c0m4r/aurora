@@ -38,6 +38,7 @@ def build_registry(cfg: Any) -> ToolRegistry:
     from .ssh_tool import SSHTool
     from .file_tool import FileReadTool, FileWriteTool
     from .rss_tool import RSSFeedTool
+    from .server_probe import ServerProbeTool
 
     tools: list[BaseTool] = [
         DateTimeTool(),
@@ -60,6 +61,22 @@ def build_registry(cfg: Any) -> ToolRegistry:
         if host_dicts:
             allow_writes = bool(getattr(ssh, "allow_writes", False))
             tools.append(SSHTool(host_dicts, allow_writes=allow_writes))
+
+    # Server Probe
+    probe_cfg = getattr(tcfg, "server_probe", None) if tcfg else None
+    if probe_cfg and getattr(probe_cfg, "enabled", False):
+        # Reuse SSH hosts for probing
+        ssh_hosts_raw = getattr(ssh, "hosts", []) or [] if ssh else []
+        ssh_host_dicts: list[dict] = []
+        for h in ssh_hosts_raw:
+            if hasattr(h, "__dict__"):
+                ssh_host_dicts.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
+            elif isinstance(h, dict):
+                ssh_host_dicts.append(h)
+
+        if ssh_host_dicts:
+            ssh_probe_enabled = bool(getattr(probe_cfg, "enable_ssh_probe", False))
+            tools.append(ServerProbeTool(ssh_host_dicts, ssh_enabled=ssh_probe_enabled))
 
     # Web search / fetch
     ws = getattr(tcfg, "websearch", None) if tcfg else None

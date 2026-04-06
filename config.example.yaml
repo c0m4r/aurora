@@ -44,6 +44,13 @@ default_model: "anthropic/claude-sonnet-4-6"
 
 # ─── Tools ──────────────────────────────────────────────────────────────────
 tools:
+  # ── Server Probe ─────────────────────────────────────────────────────────
+  # Probe servers for connectivity (ping) and SSH access.
+  # Reuses the hosts defined in the ssh section above.
+  server_probe:
+    enabled: false
+    # enable_ssh_probe: true  # Uncomment to also test SSH connectivity/auth
+
   # ── SSH ─────────────────────────────────────────────────────────────────
   ssh:
     enabled: false
