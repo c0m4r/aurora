@@ -199,9 +199,9 @@ class ServerProbeTool(BaseTool):
                 parts.append(f"\n[SUCCESS] SSH connection established in {elapsed:.3f}s")
 
                 # Get server version info if available
-                conn_info = conn.get_extra_info()
-                if conn_info and "server_version" in conn_info:
-                    parts.append(f"Server version: {conn_info['server_version']}")
+                server_version = conn.get_extra_info('server_version', None)
+                if server_version:
+                    parts.append(f"Server version: {server_version}")
 
                 # Try to run a simple command to verify shell access
                 result = await asyncio.wait_for(
@@ -222,7 +222,7 @@ class ServerProbeTool(BaseTool):
             parts.append(f"Error: Permission denied - {exc}")
             parts.append("Check username, key file, or password configuration")
 
-        except asyncssh.ConnectionError as exc:
+        except (OSError, ConnectionError) as exc:
             elapsed = time.time() - start_time
             parts.append(f"\n[FAILURE] SSH connection refused/failed after {elapsed:.3f}s")
             parts.append(f"Error: {exc}")
