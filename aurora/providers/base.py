@@ -10,12 +10,15 @@ from typing import Any, AsyncIterator, Literal, Optional
 
 @dataclass
 class ContentBlock:
-    type: Literal["text", "thinking", "tool_use", "tool_result", "image"]
+    type: Literal["text", "thinking", "tool_use", "tool_result", "image", "video"]
     # text / thinking
     text: Optional[str] = None
     # image (base64)
     image_data: Optional[str] = None
     image_media_type: Optional[str] = None  # e.g. "image/png"
+    # video (base64)
+    video_data: Optional[str] = None
+    video_media_type: Optional[str] = None  # e.g. "video/mp4"
     # tool_use
     tool_use_id: Optional[str] = None
     tool_name: Optional[str] = None

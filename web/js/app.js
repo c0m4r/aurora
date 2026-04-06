@@ -237,11 +237,20 @@ async function loadConversation(id, title) {
 
     for (const msg of data.messages || []) {
       if (msg.role === 'user') {
-        // Check if message has image blocks stored
+        // Check if message has image/video blocks stored
         const images = (msg.blocks || [])
           .filter(b => b.type === 'image' && b.image_data)
           .map(b => ({ data: b.image_data, media_type: b.image_media_type || 'image/png' }));
-        appendUserMessage(msg.content, images.length ? images : undefined, msg.created_at);
+        const videos = (msg.blocks || [])
+          .filter(b => b.type === 'video' && b.video_data)
+          .map(b => ({ data: b.video_data, media_type: b.video_media_type || 'video/mp4' }));
+        const mediaCount = images.length + videos.length;
+        appendUserMessage(
+          msg.content,
+          images.length ? images : undefined,
+          videos.length ? videos : undefined,
+          msg.created_at,
+        );
       } else if (msg.role === 'assistant') {
         appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks, msg.id, msg.response_time_ms);
         state.totalInputTokens += msg.input_tokens || 0;
@@ -279,14 +288,17 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function appendUserMessage(text, images, timestamp) {
+function appendUserMessage(text, images, videos, timestamp) {
   const imagesHtml = images && images.length
     ? `<div class="message-images">${images.map(img => `<img src="data:${img.media_type};base64,${img.data}" alt="attached" />`).join('')}</div>`
+    : '';
+  const videosHtml = videos && videos.length
+    ? `<div class="message-videos">${videos.map(vid => `<video src="data:${vid.media_type};base64,${vid.data}" controls preload="metadata"></video>`).join('')}</div>`
     : '';
   const ts = timestamp || new Date().toISOString();
   const msgEl = document.createElement('div');
   msgEl.className = 'message user';
-  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${escHtml(text)}</div>`;
+  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${videosHtml}${escHtml(text)}</div>`;
   fmt_relative(msgEl.querySelector('.message-time'), ts);
   appendMessage(msgEl);
   return msgEl;
@@ -530,15 +542,17 @@ $('#copy-all-btn').addEventListener('click', () => {
 // ─── Streaming chat ───────────────────────────────────────────────────────────
 let _abortController = null;
 
-async function sendMessage(text, images) {
-  if (!text.trim() && (!images || images.length === 0)) return;
+async function sendMessage(text, images, videos) {
+  const hasImages = images && images.length > 0;
+  const hasVideos = videos && videos.length > 0;
+  if (!text.trim() && !hasImages && !hasVideos) return;
   if (state.streaming) return;
 
   // Hide welcome
   const welcome = $('#welcome');
   if (welcome) welcome.remove();
 
-  appendUserMessage(text, images);
+  appendUserMessage(text, images, videos);
 
   state.streaming = true;
   _abortController = new AbortController();
@@ -599,6 +613,9 @@ async function sendMessage(text, images) {
     const imagePayload = images && images.length
       ? images.map(img => ({ data: img.data, media_type: img.media_type }))
       : undefined;
+    const videoPayload = videos && videos.length
+      ? videos.map(vid => ({ data: vid.data, media_type: vid.media_type }))
+      : undefined;
 
     const resp = await fetch(API('/api/chat/stream'), {
       method: 'POST',
@@ -607,6 +624,7 @@ async function sendMessage(text, images) {
       body: JSON.stringify({
         message: text,
         images: imagePayload,
+        videos: videoPayload,
         conversation_id: state.conversationId,
         model: state.currentModel || undefined,
         thinking: state.thinking,
@@ -905,15 +923,36 @@ async function sendMessage(text, images) {
   }
 }
 
-// ─── Image upload state ───────────────────────────────────────────────────────
+// ─── Media upload state (images + videos) ───────────────────────────────────────
 const pendingImages = []; // Array of { data, media_type, dataUrl }
+const pendingVideos = []; // Array of { data, media_type, dataUrl, duration }
 const MAX_IMAGES = 10;
+const MAX_VIDEOS = 3;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
 
-const previewContainer = $('#image-preview-container');
-const imageFileInput = $('#image-file-input');
-const imageUploadBtn = $('#image-upload-btn');
+const imagePreviewContainer = $('#image-preview-container');
+const videoPreviewContainer = $('#video-preview-container');
+const mediaFileInput = $('#media-file-input');
+const mediaUploadBtn = $('#media-upload-btn');
 const dragOverlay = $('#drag-overlay');
+
+// ─── Toast notifications ────────────────────────────────────────────────────
+function showToast(message, type = 'warning') {
+  const toast = document.createElement('div');
+  toast.className = `media-toast media-toast-${type}`;
+  toast.textContent = message;
+  // Append to input-area so it's visible and positioned
+  const inputArea = $('#input-area');
+  inputArea.appendChild(toast);
+  // Trigger animation
+  requestAnimationFrame(() => toast.classList.add('show'));
+  // Auto-remove after 4s
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
 
 /**
  * Read a File, compress if needed, and return base64 data + media_type + dataUrl.
@@ -922,9 +961,12 @@ const dragOverlay = $('#drag-overlay');
 async function fileToImageData(file) {
   if (!file.type.startsWith('image/')) return null;
   const allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-  if (!allowed.includes(file.type)) return null;
+  if (!allowed.includes(file.type)) {
+    showToast(`Unsupported image format: ${file.type}`, 'error');
+    return null;
+  }
   if (file.size > MAX_IMAGE_SIZE) {
-    console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB`);
+    showToast(`Image too large (${(file.size / 1024 / 1024).toFixed(1)}MB, max ${MAX_IMAGE_SIZE / 1024 / 1024}MB): ${file.name}`, 'error');
     return null;
   }
 
@@ -973,15 +1015,60 @@ async function fileToImageData(file) {
 }
 
 /**
+ * Read a video File and return base64 data + media_type + dataUrl + duration.
+ * Returns null if the file is not a valid video.
+ */
+async function fileToVideoData(file) {
+  if (!file.type.startsWith('video/')) return null;
+  const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
+  if (!allowed.includes(file.type)) {
+    showToast(`Unsupported video format: ${file.type}. Use MP4, WebM, or QuickTime.`, 'error');
+    return null;
+  }
+  if (file.size > MAX_VIDEO_SIZE) {
+    showToast(`Video too large (${(file.size / 1024 / 1024).toFixed(1)}MB, max ${MAX_VIDEO_SIZE / 1024 / 1024}MB): ${file.name}`, 'error');
+    return null;
+  }
+
+  const dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.readAsDataURL(file);
+  });
+
+  const mediaType = file.type;
+
+  // Get video duration
+  let duration = null;
+  try {
+    duration = await new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(video.src);
+        resolve(video.duration);
+      };
+      video.onerror = () => resolve(null);
+      video.src = URL.createObjectURL(file);
+    });
+  } catch (_) {
+    // Duration unavailable, continue without it
+  }
+
+  const b64 = dataUrl.split(',')[1];
+  return { data: b64, media_type: mediaType, dataUrl, duration };
+}
+
+/**
  * Render the pending image previews.
  */
 function renderImagePreviews() {
-  previewContainer.innerHTML = '';
+  imagePreviewContainer.innerHTML = '';
   if (pendingImages.length === 0) {
-    previewContainer.classList.add('hidden');
+    imagePreviewContainer.classList.add('hidden');
     return;
   }
-  previewContainer.classList.remove('hidden');
+  imagePreviewContainer.classList.remove('hidden');
   pendingImages.forEach((img, idx) => {
     const item = document.createElement('div');
     item.className = 'image-preview-item';
@@ -992,27 +1079,69 @@ function renderImagePreviews() {
       pendingImages.splice(idx, 1);
       renderImagePreviews();
     });
-    previewContainer.appendChild(item);
+    imagePreviewContainer.appendChild(item);
   });
+}
+
+/**
+ * Render the pending video previews.
+ */
+function renderVideoPreviews() {
+  videoPreviewContainer.innerHTML = '';
+  if (pendingVideos.length === 0) {
+    videoPreviewContainer.classList.add('hidden');
+    return;
+  }
+  videoPreviewContainer.classList.remove('hidden');
+  pendingVideos.forEach((vid, idx) => {
+    const item = document.createElement('div');
+    item.className = 'video-preview-item';
+    const durationStr = vid.duration ? formatDuration(vid.duration) : '';
+    item.innerHTML = `<video src="${vid.dataUrl}" muted preload="metadata"></video>
+      ${durationStr ? `<span class="video-duration">${durationStr}</span>` : ''}
+      <button class="video-preview-remove" data-idx="${idx}" title="Remove">✕</button>`;
+    item.querySelector('.video-preview-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      pendingVideos.splice(idx, 1);
+      renderVideoPreviews();
+    });
+    videoPreviewContainer.appendChild(item);
+  });
+}
+
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 /**
  * Handle file selection from the file input or drag-drop.
  */
-async function handleImageFiles(files) {
+async function handleMediaFiles(files) {
   const fileArray = Array.from(files);
+  let skippedImages = 0, skippedVideos = 0;
   for (const file of fileArray) {
-    if (pendingImages.length >= MAX_IMAGES) break;
-    const imgData = await fileToImageData(file);
-    if (imgData) pendingImages.push(imgData);
+    if (file.type.startsWith('image/')) {
+      if (pendingImages.length >= MAX_IMAGES) { skippedImages++; continue; }
+      const imgData = await fileToImageData(file);
+      if (imgData) pendingImages.push(imgData);
+    } else if (file.type.startsWith('video/')) {
+      if (pendingVideos.length >= MAX_VIDEOS) { skippedVideos++; continue; }
+      const vidData = await fileToVideoData(file);
+      if (vidData) pendingVideos.push(vidData);
+    }
   }
+  if (skippedImages) showToast(`Maximum ${MAX_IMAGES} images reached — ${skippedImages} file${skippedImages > 1 ? 's' : ''} ignored.`, 'warning');
+  if (skippedVideos) showToast(`Maximum ${MAX_VIDEOS} videos reached — ${skippedVideos} file${skippedVideos > 1 ? 's' : ''} ignored.`, 'warning');
   renderImagePreviews();
+  renderVideoPreviews();
 }
 
 // File button
-imageUploadBtn.addEventListener('click', () => imageFileInput.click());
-imageFileInput.addEventListener('change', (e) => {
-  if (e.target.files.length) handleImageFiles(e.target.files);
+mediaUploadBtn.addEventListener('click', () => mediaFileInput.click());
+mediaFileInput.addEventListener('change', (e) => {
+  if (e.target.files.length) handleMediaFiles(e.target.files);
   e.target.value = ''; // Reset so the same file can be re-selected
 });
 
@@ -1030,7 +1159,7 @@ document.addEventListener('paste', (e) => {
   }
   if (imageFiles.length) {
     e.preventDefault();
-    handleImageFiles(imageFiles);
+    handleMediaFiles(imageFiles);
     inputEl.focus();
   }
 });
@@ -1062,7 +1191,7 @@ document.addEventListener('drop', (e) => {
   dragCounter = 0;
   dragOverlay.classList.remove('active');
   if (e.dataTransfer?.files?.length) {
-    handleImageFiles(e.dataTransfer.files);
+    handleMediaFiles(e.dataTransfer.files);
   }
 });
 
@@ -1099,13 +1228,30 @@ sendBtn.addEventListener('click', () => {
 
 function doSend() {
   const text = inputEl.value.trim();
-  if ((!text && pendingImages.length === 0) || state.streaming) return;
+  const hasMedia = pendingImages.length > 0 || pendingVideos.length > 0;
+  if ((!text && !hasMedia) || state.streaming) return;
   inputEl.value = '';
   inputEl.style.height = 'auto';
   const images = [...pendingImages];
+  const videos = [...pendingVideos];
   pendingImages.length = 0;
+  pendingVideos.length = 0;
   renderImagePreviews();
-  sendMessage(text || 'See attached image', images);
+  renderVideoPreviews();
+
+  // Determine default text if only media was attached
+  let defaultText = text;
+  if (!text && hasMedia) {
+    if (images.length && videos.length) {
+      defaultText = 'See attached images and videos';
+    } else if (images.length) {
+      defaultText = 'See attached image';
+    } else {
+      defaultText = 'See attached video';
+    }
+  }
+
+  sendMessage(defaultText, images, videos);
 }
 
 function stopStream() {
@@ -1117,7 +1263,7 @@ function setStreamingUI(streaming) {
   sendBtn.innerHTML = streaming ? STOP_ICON : SEND_ICON;
   sendBtn.title = streaming ? 'Stop (Esc)' : 'Send (Enter)';
   sendBtn.classList.toggle('btn-send-stop', streaming);
-  imageUploadBtn.disabled = streaming;
+  mediaUploadBtn.disabled = streaming;
   if (!streaming) inputEl.focus();
 }
 

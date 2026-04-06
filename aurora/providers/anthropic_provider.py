@@ -53,6 +53,15 @@ def _to_api_messages(messages: list[NormalizedMessage]) -> list[dict]:
                         "data": blk.image_data,
                     },
                 })
+            elif blk.type == "video" and blk.video_data:
+                content.append({
+                    "type": "video",
+                    "source": {
+                        "type": "base64",
+                        "media_type": blk.video_media_type or "video/mp4",
+                        "data": blk.video_data,
+                    },
+                })
             elif blk.type == "text" and blk.text:
                 content.append({"type": "text", "text": blk.text})
             elif blk.type == "thinking" and blk.text:

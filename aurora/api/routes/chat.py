@@ -28,9 +28,15 @@ class ImageData(BaseModel):
     media_type: str   # e.g. "image/png"
 
 
+class VideoData(BaseModel):
+    data: str         # base64-encoded
+    media_type: str   # e.g. "video/mp4"
+
+
 class ChatRequest(BaseModel):
     message: str
     images: Optional[list[ImageData]] = None
+    videos: Optional[list[VideoData]] = None
     conversation_id: Optional[str] = None
     model: Optional[str] = None
     thinking: bool = True
@@ -58,13 +64,20 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     if not conv_id:
         conv_id = await store.create_conversation(model=model_id)
 
-    # Persist user message with images
+    # Persist user message with images and videos
     user_blocks: list[dict] | None = None
-    if req.images:
-        user_blocks = [
-            {"type": "image", "image_data": img.data, "image_media_type": img.media_type}
-            for img in req.images
-        ]
+    if req.images or req.videos:
+        user_blocks = []
+        if req.images:
+            user_blocks.extend(
+                {"type": "image", "image_data": img.data, "image_media_type": img.media_type}
+                for img in req.images
+            )
+        if req.videos:
+            user_blocks.extend(
+                {"type": "video", "video_data": vid.data, "video_media_type": vid.media_type}
+                for vid in req.videos
+            )
         user_blocks.append({"type": "text", "text": req.message})
     await store.add_message(conv_id, "user", req.message, blocks=user_blocks)
 
@@ -72,16 +85,23 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     raw_msgs = await store.get_messages(conv_id)
     history = _to_normalized(raw_msgs)
 
-    # Inject images into the last user message (images before text for optimal performance)
-    if req.images and history and history[-1].role == "user":
+    # Inject images and videos into the last user message (media before text for optimal performance)
+    if (req.images or req.videos) and history and history[-1].role == "user":
         last = history[-1]
-        img_blocks = [
-            ContentBlock(type="image", image_data=img.data, image_media_type=img.media_type)
-            for img in req.images
-        ]
+        media_blocks = []
+        if req.images:
+            media_blocks.extend([
+                ContentBlock(type="image", image_data=img.data, image_media_type=img.media_type)
+                for img in req.images
+            ])
+        if req.videos:
+            media_blocks.extend([
+                ContentBlock(type="video", video_data=vid.data, video_media_type=vid.media_type)
+                for vid in req.videos
+            ])
         text_block = ContentBlock(type="text", text=last.text or "")
         last.text = None
-        last.blocks = img_blocks + [text_block]
+        last.blocks = media_blocks + [text_block]
 
     # Inject relevant past solutions into system prompt
     solutions = await store.search_solutions(req.message, limit=3)
@@ -352,6 +372,7 @@ def _to_normalized(raw_msgs: list[dict]) -> list[NormalizedMessage]:
 
     For assistant messages with saved tool blocks, reconstruct the multi-message
     tool-use history so the model sees the full context.
+    For user messages with image/video blocks, reconstruct those as well.
     """
     from ...providers.base import ContentBlock
 
@@ -362,7 +383,31 @@ def _to_normalized(raw_msgs: list[dict]) -> list[NormalizedMessage]:
         blocks = m.get("blocks") or []
 
         if role == "user":
-            result.append(NormalizedMessage(role="user", text=content))
+            # Check for image/video blocks and reconstruct them
+            media_blocks = []
+            for blk in blocks:
+                if blk["type"] == "image" and blk.get("image_data"):
+                    media_blocks.append(ContentBlock(
+                        type="image",
+                        image_data=blk["image_data"],
+                        image_media_type=blk.get("image_media_type", "image/png"),
+                    ))
+                elif blk["type"] == "video" and blk.get("video_data"):
+                    media_blocks.append(ContentBlock(
+                        type="video",
+                        video_data=blk["video_data"],
+                        video_media_type=blk.get("video_media_type", "video/mp4"),
+                    ))
+
+            if media_blocks:
+                # Media blocks before text
+                text_block = ContentBlock(type="text", text=content) if content else None
+                result.append(NormalizedMessage(
+                    role="user",
+                    blocks=media_blocks + ([text_block] if text_block else []),
+                ))
+            else:
+                result.append(NormalizedMessage(role="user", text=content))
 
         elif role == "assistant":
             if not blocks:

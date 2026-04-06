@@ -100,6 +100,14 @@ def _to_api_messages(messages: list[NormalizedMessage], system: str) -> list[dic
                     "type": "image_url",
                     "image_url": {"url": f"data:{mt};base64,{blk.image_data}"},
                 })
+            elif blk.type == "video" and blk.video_data:
+                # OpenAI-compatible APIs don't support video via image_url.
+                # Add a text note so the model can explain the limitation to the user.
+                mt = blk.video_media_type or "video/mp4"
+                content_parts.append({
+                    "type": "text",
+                    "text": f"[📹 Video attached ({mt}) — this model cannot process video. Use Claude for video support.]",
+                })
             elif blk.type in ("text", "thinking") and blk.text:
                 content_parts.append({"type": "text", "text": blk.text})
             elif blk.type == "tool_use":
@@ -122,9 +130,9 @@ def _to_api_messages(messages: list[NormalizedMessage], system: str) -> list[dic
             result.extend(tool_results)
         elif tool_calls or content_parts:
             api_msg: dict[str, Any] = {"role": msg.role}
-            # Use content array when images are present, plain string otherwise
-            has_images = any(p.get("type") == "image_url" for p in content_parts)
-            if content_parts and has_images:
+            # Use content array when media is present, plain string otherwise
+            has_media = any(p.get("type") == "image_url" for p in content_parts)
+            if content_parts and has_media:
                 api_msg["content"] = content_parts
             elif content_parts:
                 api_msg["content"] = "\n".join(p["text"] for p in content_parts if p.get("text"))
