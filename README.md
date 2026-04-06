@@ -2,6 +2,10 @@
 
 # 🪼 Aurora
 
+![Linux](https://img.shields.io/badge/made%20for-linux-yellow?logo=linux&logoColor=ffffff) 
+![Python](https://img.shields.io/badge/made%20with-python-blue?logo=python&logoColor=ffffff) 
+[![License: GPL v3](https://img.shields.io/badge/License-AGPLv3-red.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 A general-purpose AI assistant with Linux server administration capabilities.
 
 Ask questions, diagnose problems, run commands on remote servers, search the web, and save files — all through a streaming chat interface backed by any LLM.
