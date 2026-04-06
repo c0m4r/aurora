@@ -75,6 +75,12 @@ tools:
     #     user: "root"
     #     key_file: "~/.ssh/id_ed25519"
 
+  # ── SCP Upload ─────────────────────────────────────────────────────────
+  # Upload files from ./files/ sandbox to remote servers via SCP.
+  # Reuses the hosts defined in the ssh section above.
+  scp_upload:
+    enabled: false
+
   # ── Web search & fetch ───────────────────────────────────────────────────
   websearch:
     enabled: true

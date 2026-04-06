@@ -39,6 +39,7 @@ def build_registry(cfg: Any) -> ToolRegistry:
     from .file_tool import FileReadTool, FileWriteTool
     from .rss_tool import RSSFeedTool
     from .server_probe import ServerProbeTool
+    from .scp_upload_tool import SCPUploadTool
 
     tools: list[BaseTool] = [
         DateTimeTool(),
@@ -61,6 +62,19 @@ def build_registry(cfg: Any) -> ToolRegistry:
         if host_dicts:
             allow_writes = bool(getattr(ssh, "allow_writes", False))
             tools.append(SSHTool(host_dicts, allow_writes=allow_writes))
+
+    # SCP Upload — reuses SSH hosts
+    scp_cfg = getattr(tcfg, "scp_upload", None) if tcfg else None
+    if scp_cfg and getattr(scp_cfg, "enabled", False):
+        ssh_hosts_raw = getattr(ssh, "hosts", []) or [] if ssh else []
+        ssh_host_dicts: list[dict] = []
+        for h in ssh_hosts_raw:
+            if hasattr(h, "__dict__"):
+                ssh_host_dicts.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
+            elif isinstance(h, dict):
+                ssh_host_dicts.append(h)
+        if ssh_host_dicts:
+            tools.append(SCPUploadTool(ssh_host_dicts))
 
     # Server Probe
     probe_cfg = getattr(tcfg, "server_probe", None) if tcfg else None
