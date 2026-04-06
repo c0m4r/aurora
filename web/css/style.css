@@ -663,15 +663,15 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   font-size: 13px; padding: 0 2px; line-height: 1; flex-shrink: 0;
 }
 .learn-stop:hover { color: var(--red); }
-.btn-learn {
+.btn-chip {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--bg-tertiary); border: 1px solid var(--border);
   border-radius: 12px; padding: 3px 10px; font-size: 11px;
   color: var(--text-muted); cursor: pointer; margin-top: 4px;
   transition: all var(--transition);
 }
-.btn-learn:hover { color: var(--text); border-color: var(--accent); background: var(--accent-bg); }
-.btn-learn:disabled { opacity: 0.6; cursor: default; }
+.btn-chip:hover { color: var(--text); border-color: var(--accent); background: var(--accent-bg); }
+.btn-chip:disabled { opacity: 0.6; cursor: default; }
 
 /* ─── Token usage bar ─────────────────────────────────────────────────────── */
 .usage-badge {

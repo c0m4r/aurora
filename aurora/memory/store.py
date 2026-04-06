@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS messages (
     thinking        TEXT,
     input_tokens    INTEGER NOT NULL DEFAULT 0,
     output_tokens   INTEGER NOT NULL DEFAULT 0,
+    response_time_ms REAL NOT NULL DEFAULT 0,
     model           TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL
 );
@@ -89,6 +90,13 @@ class MemoryStore:
     async def init(self) -> None:
         async with aiosqlite.connect(self.db_path) as db:
             await db.executescript(_DDL)
+            # Migration: add response_time_ms column if it doesn't exist
+            try:
+                await db.execute(
+                    "ALTER TABLE messages ADD COLUMN response_time_ms REAL NOT NULL DEFAULT 0"
+                )
+            except aiosqlite.OperationalError:
+                pass  # column already exists
             await db.commit()
 
     # ─── Conversations ─────────────────────────────────────────────────────
@@ -142,18 +150,19 @@ class MemoryStore:
         input_tokens: int = 0,
         output_tokens: int = 0,
         model: str = "",
+        response_time_ms: float = 0,
     ) -> int:
         now = _now()
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
                 """INSERT INTO messages
                    (conversation_id, role, content, blocks_json, thinking,
-                    input_tokens, output_tokens, model, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                    input_tokens, output_tokens, model, response_time_ms, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     cid, role, content,
                     json.dumps(blocks) if blocks else None,
-                    thinking, input_tokens, output_tokens, model, now,
+                    thinking, input_tokens, output_tokens, model, response_time_ms, now,
                 ),
             )
             await db.execute(

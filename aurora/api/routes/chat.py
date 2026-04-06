@@ -158,6 +158,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                             input_tokens=input_tokens,
                             output_tokens=output_tokens,
                             model=model_id,
+                            response_time_ms=round(response_time * 1000, 2),
                         )
 
                     # Auto-title from first user message

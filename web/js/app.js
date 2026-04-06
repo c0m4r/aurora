@@ -82,6 +82,28 @@ const fmt_time = (iso) => {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+/** Relative time like "3m ago", "2h ago", "5d ago". Also sets title to full datetime. */
+function fmt_relative(el, iso) {
+  if (!iso) { el.textContent = ''; el.title = ''; return; }
+  const d = new Date(iso);
+  const diffMs = Date.now() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr  = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+  let text;
+  if (diffSec < 60) text = 'just now';
+  else if (diffMin < 60) text = `${diffMin}m ago`;
+  else if (diffHr < 24) text = `${diffHr}h ago`;
+  else if (diffDay < 30) text = `${diffDay}d ago`;
+  else text = `${Math.floor(diffDay / 30)}mo ago`;
+  el.textContent = text;
+  el.title = d.toLocaleString([], {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
 const fmt_date = (iso) => {
   const d = new Date(iso);
   const now = new Date();
@@ -219,9 +241,9 @@ async function loadConversation(id, title) {
         const images = (msg.blocks || [])
           .filter(b => b.type === 'image' && b.image_data)
           .map(b => ({ data: b.image_data, media_type: b.image_media_type || 'image/png' }));
-        appendUserMessage(msg.content, images.length ? images : undefined);
+        appendUserMessage(msg.content, images.length ? images : undefined, msg.created_at);
       } else if (msg.role === 'assistant') {
-        appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks, msg.id);
+        appendAssistantMessage(msg.content, msg.thinking, msg.created_at, msg.input_tokens, msg.output_tokens, msg.blocks, msg.id, msg.response_time_ms);
         state.totalInputTokens += msg.input_tokens || 0;
         state.totalOutputTokens += msg.output_tokens || 0;
       }
@@ -257,18 +279,20 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function appendUserMessage(text, images) {
+function appendUserMessage(text, images, timestamp) {
   const imagesHtml = images && images.length
     ? `<div class="message-images">${images.map(img => `<img src="data:${img.media_type};base64,${img.data}" alt="attached" />`).join('')}</div>`
     : '';
+  const ts = timestamp || new Date().toISOString();
   const msgEl = document.createElement('div');
   msgEl.className = 'message user';
-  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time">${fmt_time(new Date().toISOString())}</span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${escHtml(text)}</div>`;
+  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${escHtml(text)}</div>`;
+  fmt_relative(msgEl.querySelector('.message-time'), ts);
   appendMessage(msgEl);
   return msgEl;
 }
 
-function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok, blocks, msgId) {
+function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputTok, blocks, msgId, responseTimeMs) {
   const msgEl = document.createElement('div');
   msgEl.className = 'message assistant';
 
@@ -276,11 +300,15 @@ function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputT
     ? `<div class="usage-badge">↑${inputTok || 0} ↓${outputTok || 0} tokens</div>`
     : '';
 
+  const timeBadge = responseTimeMs
+    ? `<div class="usage-badge response-time-badge">⏱ ${(responseTimeMs / 1000).toFixed(2)}s</div>`
+    : '';
+
   msgEl.innerHTML = `
     <div class="message-header">
       <div class="message-avatar">🪼</div>
       <span class="message-role">Aurora</span>
-      <span class="message-time">${timestamp ? fmt_time(timestamp) : ''}</span>
+      <span class="message-time"></span>
       <button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button>
     </div>
     <div class="message-body">
@@ -288,8 +316,10 @@ function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputT
       ${renderSavedToolBlocks(blocks)}
       <div class="md-content">${marked.parse(text || '')}</div>
       ${usageBadge}
+      ${timeBadge}
     </div>
   `;
+  fmt_relative(msgEl.querySelector('.message-time'), timestamp);
   // Learn button for past messages with tool blocks
   if (blocks && blocks.some(b => b.type === 'tool_use')) {
     appendLearnButton(msgEl.querySelector('.message-body'), state.conversationId, msgId);
@@ -335,7 +365,7 @@ function renderSavedToolBlocks(blocks) {
 
 function appendLearnButton(container, convId, msgId) {
   const btn = document.createElement('button');
-  btn.className = 'btn-learn';
+  btn.className = 'btn-chip';
   btn.innerHTML = '🧠 Learn';
   btn.title = 'Extract a reusable solution from this response';
   btn.addEventListener('click', () => triggerLearn(btn, container, convId, msgId));
@@ -527,6 +557,7 @@ async function sendMessage(text, images) {
       <div class="stream-body"></div>
     </div>
   `;
+  fmt_relative(msgEl.querySelector('.message-time'), new Date().toISOString());
   appendMessage(msgEl);
 
   const streamBody = msgEl.querySelector('.stream-body');
@@ -811,7 +842,7 @@ async function sendMessage(text, images) {
           }
           // Go for it / Continue quick-action buttons
           const goBtn = document.createElement('button');
-          goBtn.className = 'btn-continue';
+          goBtn.className = 'btn-chip';
           goBtn.textContent = '🚀 Go for it';
           goBtn.title = 'Prompt: "Go for it"';
           goBtn.addEventListener('click', () => {
@@ -820,7 +851,7 @@ async function sendMessage(text, images) {
           msgBody.appendChild(goBtn);
 
           const moreBtn = document.createElement('button');
-          moreBtn.className = 'btn-continue';
+          moreBtn.className = 'btn-chip';
           moreBtn.textContent = '⏩ Continue';
           moreBtn.title = 'Prompt: "Continue"';
           moreBtn.addEventListener('click', () => {
@@ -828,7 +859,7 @@ async function sendMessage(text, images) {
           });
           msgBody.appendChild(moreBtn);
           // Add timestamp
-          msgEl.querySelector('.message-time').textContent = fmt_time(new Date().toISOString());
+          fmt_relative(msgEl.querySelector('.message-time'), new Date().toISOString());
           // Add copy button
           const header = msgEl.querySelector('.message-header');
           if (!header.querySelector('.message-copy')) {
