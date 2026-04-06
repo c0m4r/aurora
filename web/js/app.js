@@ -809,6 +809,24 @@ async function sendMessage(text, images) {
             });
             msgBody.appendChild(contBtn);
           }
+          // Go for it / Continue quick-action buttons
+          const goBtn = document.createElement('button');
+          goBtn.className = 'btn-continue';
+          goBtn.textContent = '🚀 Go for it';
+          goBtn.title = 'Prompt: "Go for it"';
+          goBtn.addEventListener('click', () => {
+            sendMessage('Go for it', []);
+          });
+          msgBody.appendChild(goBtn);
+
+          const moreBtn = document.createElement('button');
+          moreBtn.className = 'btn-continue';
+          moreBtn.textContent = '⏩ Continue';
+          moreBtn.title = 'Prompt: "Continue"';
+          moreBtn.addEventListener('click', () => {
+            sendMessage('Continue', []);
+          });
+          msgBody.appendChild(moreBtn);
           // Add timestamp
           msgEl.querySelector('.message-time').textContent = fmt_time(new Date().toISOString());
           // Add copy button
