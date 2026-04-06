@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -90,6 +91,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     tool_log: list[dict] = []      # flattened log for learner
     input_tokens = 0
     output_tokens = 0
+    start_time = time.monotonic()
 
     async def generate():
         nonlocal input_tokens, output_tokens
@@ -135,6 +137,9 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                     input_tokens += event.get("input_tokens", 0)
                     output_tokens += event.get("output_tokens", 0)
                 elif etype == "done":
+                    # Calculate response time
+                    response_time = time.monotonic() - start_time
+
                     # Persist assistant response
                     full_text = "".join(assistant_text_parts)
                     full_thinking = "".join(thinking_parts)
@@ -172,6 +177,9 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                             store=store,
                         ):
                             yield f"data: {json.dumps(learn_event)}\n\n"
+
+                    # Emit response time
+                    yield f"data: {json.dumps({'type': 'response_time', 'duration_ms': round(response_time * 1000, 2)})}\n\n"
 
                 yield f"data: {json.dumps(event)}\n\n"
 

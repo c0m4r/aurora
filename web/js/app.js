@@ -537,6 +537,7 @@ async function sendMessage(text) {
   let currentTextEl = null;
   let textBuf = '';
   let inputTokens = 0, outputTokens = 0;
+  let responseTimeMs = 0;
   const cursorEl = document.createElement('span');
   cursorEl.className = 'cursor';
 
@@ -758,6 +759,10 @@ async function sendMessage(text) {
           updateTokenDisplay();
         }
 
+        else if (t === 'response_time') {
+          responseTimeMs = event.duration_ms || 0;
+        }
+
         else if (t === 'done') {
           // Remove cursor (it may be inside currentTextEl or detached)
           cursorEl.remove();
@@ -774,6 +779,14 @@ async function sendMessage(text) {
             badge.className = 'usage-badge';
             badge.textContent = `↑${inputTokens} ↓${outputTokens} tokens`;
             msgBody.appendChild(badge);
+          }
+          // Add response time badge
+          if (responseTimeMs > 0) {
+            const timeBadge = document.createElement('div');
+            timeBadge.className = 'usage-badge response-time-badge';
+            const seconds = (responseTimeMs / 1000).toFixed(2);
+            timeBadge.textContent = `⏱ ${seconds}s`;
+            msgBody.appendChild(timeBadge);
           }
           // Learn button if tools were used and auto-learn was off
           if (Object.keys(toolBlocks).length && !state.learn) {

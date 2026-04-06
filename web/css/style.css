@@ -615,6 +615,12 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   margin-top: 6px;
 }
 
+.response-time-badge {
+  color: var(--green);
+  border-color: rgba(63, 185, 80, 0.3);
+  background: rgba(63, 185, 80, 0.08);
+}
+
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 .mobile-only { display: none; }
 
