@@ -58,8 +58,15 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     if not conv_id:
         conv_id = await store.create_conversation(model=model_id)
 
-    # Persist user message
-    await store.add_message(conv_id, "user", req.message)
+    # Persist user message with images
+    user_blocks: list[dict] | None = None
+    if req.images:
+        user_blocks = [
+            {"type": "image", "image_data": img.data, "image_media_type": img.media_type}
+            for img in req.images
+        ]
+        user_blocks.append({"type": "text", "text": req.message})
+    await store.add_message(conv_id, "user", req.message, blocks=user_blocks)
 
     # Load history and convert to NormalizedMessages
     raw_msgs = await store.get_messages(conv_id)
