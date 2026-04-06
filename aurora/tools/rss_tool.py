@@ -31,6 +31,9 @@ FEED_CATALOGUE: dict[str, dict[str, str]] = {
         "aljazeera":     "https://www.aljazeera.com/xml/rss/all.xml",
         "cnn_top":       "http://rss.cnn.com/rss/edition.rss",
     },
+    "world_in_polish" {
+        "polsatnews":    "https://www.polsatnews.pl/rss/swiat.xml",
+    },
     "technology": {
         "techcrunch":    "https://techcrunch.com/feed/",
         "theverge":      "https://www.theverge.com/rss/index.xml",
@@ -64,6 +67,9 @@ FEED_CATALOGUE: dict[str, dict[str, str]] = {
         "bleepingcomp":  "https://www.bleepingcomputer.com/feed/",
         "thehackernews": "https://feeds.feedburner.com/TheHackersNews",
     },
+    "weather_alerts_in_polish" {
+        "lowcy_burz":    "https://lowcyburz.pl/feed/",
+    }
 }
 
 # Flat name → url lookup built from catalogue

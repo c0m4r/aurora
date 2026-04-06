@@ -51,6 +51,11 @@ DEFAULT_WHITELIST: list[str] = [
     "reuters.com",
     "news.google.com",
     "news.ycombinator.com",
+    "rmf24.pl",
+    "radiozet.pl",
+    "wp.pl",
+    "onet.pl",
+    "pap.pl",
     # CVE / security
     "nvd.nist.gov",
     "cve.mitre.org",
