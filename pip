@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source .venv/bin/activate
+export PIP_UPLOADED_PRIOR_TO="$(date +\%Y-\%m-\%d -d "7days ago")"
+.venv/bin/pip "$@"
