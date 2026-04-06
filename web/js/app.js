@@ -386,7 +386,7 @@ function renderSavedToolBlocks(blocks) {
       ? `<span class="tool-status ${res.error ? 'error' : 'success'}">${res.error ? '✗ Error' : '✓ Done'}</span>`
       : '';
     const resultHtml = res
-      ? `<div class="tool-section"><div class="tool-section-label">Output</div><pre>${escHtml(res.output || '')}</pre></div>`
+      ? `<div class="tool-section"><div class="tool-section-label">Output</div>${renderToolOutput(tc.name, res.output || '')}</div>`
       : '';
     return `<div class="tool-block">
       <div class="tool-header" onclick="toggleBlock(this)">
@@ -401,6 +401,24 @@ function renderSavedToolBlocks(blocks) {
       </div>
     </div>`;
   }).join('');
+}
+
+function renderToolOutput(toolName, output) {
+  // file_edit returns a summary line + unified diff — render with diff highlighting
+  if (toolName === 'file_edit' && output.includes('--- a/')) {
+    const lines = output.split('\n');
+    const highlighted = lines.map(line => {
+      const escaped = escHtml(line);
+      if (line.startsWith('---') || line.startsWith('+++')) return `<span class="diff-meta">${escaped}</span>`;
+      if (line.startsWith('@@')) return `<span class="diff-hunk">${escaped}</span>`;
+      if (line.startsWith('+')) return `<span class="diff-add">${escaped}</span>`;
+      if (line.startsWith('-')) return `<span class="diff-del">${escaped}</span>`;
+      return escaped;
+    }).join('\n');
+    return `<pre class="diff-output">${highlighted}</pre>`;
+  }
+  // Default: plain escaped output
+  return `<pre>${escHtml(output)}</pre>`;
 }
 
 function appendLearnButton(container, convId, msgId) {
@@ -776,6 +794,7 @@ async function sendMessage(text, images, videos) {
             statusEl: tb.querySelector('.tool-status'),
             resultSection: tb.querySelector('.tool-result-section'),
             outputEl: tb.querySelector('.tool-output'),
+            toolName: event.name,
           };
           scrollToBottom();
         }
@@ -785,7 +804,11 @@ async function sendMessage(text, images, videos) {
           if (entry) {
             entry.statusEl.className = 'tool-status ' + (event.error ? 'error' : 'success');
             entry.statusEl.innerHTML = event.error ? '✗ Error' : '✓ Done';
-            entry.outputEl.textContent = event.output || '';
+            const output = event.output || '';
+            // Use renderToolOutput for diff highlighting if it's a file_edit
+            entry.outputEl.outerHTML = renderToolOutput(entry.toolName || '', output);
+            // Re-acquire outputEl since we replaced it
+            entry.outputEl = entry.block.querySelector('.diff-output, .tool-output');
             entry.resultSection.style.display = '';
             entry.block.classList.remove('open'); // collapse after result
             scrollToBottom();

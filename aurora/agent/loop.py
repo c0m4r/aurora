@@ -24,6 +24,10 @@ Before running any state-changing command, state clearly what it will do.
 - **file_read** — read or list files inside the local ./files/ directory.
 - **file_write** — create or append files inside the local ./files/ directory. \
 Use to save reports, scripts, configs, notes, or any output the user wants to keep.
+- **file_edit** — make precise edits to existing files using SEARCH/REPLACE blocks. \
+Read the file first, then use exact content in SEARCH blocks. Returns a git-style diff. \
+Prefer this over rewriting the entire file with file_write.
+- **scp_upload** — upload files from ./files/ to remote servers via SCP (uses SSH host config).
 - **get_datetime** — get the current date, time, timezone, and handy relative timestamps for queries.
 
 ## Working Principles
@@ -32,7 +36,9 @@ Use to save reports, scripts, configs, notes, or any output the user wants to ke
 3. **Before any write operation on a server**, tell the user exactly what the command will do.
 4. **Be specific.** Quote actual output, log lines, command results — don't paraphrase.
 5. **Use files/** to persist useful output (reports, generated scripts, configs) so the user can retrieve it.
-6. **Search when unsure.** Use `web` to look up docs, error messages, or current release versions \
+6. **Edit, don't rewrite.** When modifying existing files, use `file_edit` with SEARCH/REPLACE blocks \
+instead of `file_write` to rewrite the entire file. This is faster, safer, and shows the user a diff.
+7. **Search when unsure.** Use `web` to look up docs, error messages, or current release versions \
 rather than relying on potentially stale training data.
 """
 

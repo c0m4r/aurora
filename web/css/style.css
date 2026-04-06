@@ -850,3 +850,40 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   border: none;
   border-radius: 0;
 }
+
+/* ─── Diff output (file_edit tool) ───────────────────────────────────────── */
+.diff-output {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+.diff-add {
+  background: rgba(46, 160, 67, 0.15);
+  color: #56d364;
+  display: inline-block;
+  width: 100%;
+}
+.diff-del {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+  display: inline-block;
+  width: 100%;
+}
+.diff-meta {
+  color: var(--accent);
+  font-weight: 600;
+}
+.diff-hunk {
+  color: var(--yellow);
+}
+
+[data-theme="light"] .diff-add {
+  background: rgba(46, 160, 67, 0.1);
+  color: #1a7f37;
+}
+[data-theme="light"] .diff-del {
+  background: rgba(207, 34, 46, 0.08);
+  color: #cf222e;
+}

@@ -37,6 +37,7 @@ def build_registry(cfg: Any) -> ToolRegistry:
     from .websearch_tool import WebSearchTool
     from .ssh_tool import SSHTool
     from .file_tool import FileReadTool, FileWriteTool
+    from .file_edit_tool import FileEditTool
     from .rss_tool import RSSFeedTool
     from .server_probe import ServerProbeTool
     from .scp_upload_tool import SCPUploadTool
@@ -45,6 +46,7 @@ def build_registry(cfg: Any) -> ToolRegistry:
         DateTimeTool(),
         FileReadTool(),
         FileWriteTool(),
+        FileEditTool(),
     ]
 
     tcfg = getattr(cfg, "tools", None)
