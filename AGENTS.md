@@ -1,3 +1,13 @@
+## Project description
+
+A general-purpose AI assistant with Linux server administration capabilities.
+
+### Project structure
+
+Frontend: ./web/
+Backend: ./aurora/
+CLI: ./cli/
+
 ## How to test changes
 
 1. You MUST run commands inside python venv.
