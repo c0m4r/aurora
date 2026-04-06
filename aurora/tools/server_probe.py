@@ -35,31 +35,34 @@ class ServerProbeTool(BaseTool):
         return ToolDefinition(
             name="server_probe",
             description=(
-                f"Probe servers for connectivity and SSH access.\n"
+                f"Probe servers for connectivity and SSH access, or list configured servers.\n"
                 f"Available hosts: {', '.join(host_names) or 'none configured'}.\n"
                 f"Supported probes: {', '.join(capabilities)}.\n\n"
                 "Use this to:\n"
-                "- Check if a server is reachable via ICMP ping\n"
-                "- Verify if SSH service is running and accessible\n"
-                "- Test SSH authentication with configured credentials\n\n"
-                "Returns detailed probe results including latency and status."
+                "- 'list': List all configured servers with their names, IPs, ports, and users\n"
+                "- 'ping': Check if a server is reachable via ICMP ping\n"
+                + ("- 'ssh': Check SSH service and authentication\n" if self._ssh_enabled else "")
             ),
             parameters={
                 "type": "object",
                 "properties": {
                     "host": {
                         "type": "string",
-                        "description": f"Target host to probe. One of: {', '.join(host_names)}",
-                        "enum": host_names if host_names else ["(none configured)"],
+                        "description": (
+                            "Target host to probe. One of: " + (", ".join(host_names)) + 
+                            ". Use 'all' with probe_type='list' to show all servers."
+                        ),
+                        "enum": host_names + ["all"] if host_names else ["(none configured)"],
                     },
                     "probe_type": {
                         "type": "string",
                         "description": (
                             "Type of probe to perform:\n"
+                            "- 'list': List all configured servers (use host='all')\n"
                             "- 'ping': Send ICMP echo requests (checks network connectivity)\n"
                             + ("- 'ssh': Check SSH service and authentication\n" if self._ssh_enabled else "")
                         ),
-                        "enum": ["ping", "ssh"] if self._ssh_enabled else ["ping"],
+                        "enum": ["list", "ping", "ssh"] if self._ssh_enabled else ["list", "ping"],
                     },
                     "count": {
                         "type": "integer",
@@ -75,6 +78,9 @@ class ServerProbeTool(BaseTool):
 
     async def execute(self, host: str, probe_type: str, count: int = 3, **_) -> str:
         """Execute the probe and return results."""
+        if probe_type == "list":
+            return self._list_servers()
+
         host_cfg = self._hosts.get(host)
         if not host_cfg:
             return f"Unknown host '{host}'. Configured hosts: {list(self._hosts.keys())}"
@@ -86,6 +92,29 @@ class ServerProbeTool(BaseTool):
         except Exception as exc:
             logger.error("Probe failed on %s: %s", host, exc)
             return f"[PROBE ERROR] {exc}"
+
+    def _list_servers(self) -> str:
+        """List all configured servers with their details."""
+        if not self._hosts:
+            return "No servers configured."
+
+        parts = ["=== Configured Servers ===", ""]
+
+        for name, cfg in self._hosts.items():
+            host_addr = cfg.get("host", "unknown")
+            port = cfg.get("port", 22)
+            user = cfg.get("user", "root")
+            key_file = cfg.get("key_file", "(not configured)")
+
+            parts.append(f"Name:     {name}")
+            parts.append(f"Address:  {host_addr}")
+            parts.append(f"Port:     {port}")
+            parts.append(f"User:     {user}")
+            parts.append(f"Key File: {key_file}")
+            parts.append("")
+
+        parts.append(f"Total: {len(self._hosts)} server(s) configured")
+        return "\n".join(parts)
 
     async def _probe_ping(self, host_name: str, host_cfg: dict, count: int) -> str:
         """Perform ICMP ping probe."""
