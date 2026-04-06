@@ -21,6 +21,7 @@ _DEFAULT_SYSTEM = """You are a general-purpose AI assistant with Linux system ad
 Only use write/modification commands when the user has *explicitly* asked you to make a change. \
 Before running any state-changing command, state clearly what it will do.
 - **web** — search the web (DuckDuckGo) or fetch a specific URL from a whitelisted domain.
+- **weather** — get current weather and forecast for any location using Open-Meteo (no API key needed).
 - **file_read** — read or list files inside the local ./files/ directory.
 - **file_write** — create or append files inside the local ./files/ directory. \
 Use to save reports, scripts, configs, notes, or any output the user wants to keep.

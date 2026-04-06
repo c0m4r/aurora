@@ -41,12 +41,14 @@ def build_registry(cfg: Any) -> ToolRegistry:
     from .rss_tool import RSSFeedTool
     from .server_probe import ServerProbeTool
     from .scp_upload_tool import SCPUploadTool
+    from .weather_tool import WeatherTool
 
     tools: list[BaseTool] = [
         DateTimeTool(),
         FileReadTool(),
         FileWriteTool(),
         FileEditTool(),
+        WeatherTool(),
     ]
 
     tcfg = getattr(cfg, "tools", None)
@@ -119,5 +121,12 @@ def build_registry(cfg: Any) -> ToolRegistry:
         elif isinstance(extra_raw, dict):
             extra_feeds = extra_raw
         tools.append(RSSFeedTool(max_items=max_items, extra_feeds=extra_feeds))
+
+    # Weather forecast
+    weather_cfg = getattr(tcfg, "weather", None) if tcfg else None
+    weather_enabled = getattr(weather_cfg, "enabled", True) if weather_cfg else True
+    if weather_enabled:
+        forecast_days = int(getattr(weather_cfg, "default_forecast_days", 3)) if weather_cfg else 3
+        tools.append(WeatherTool(default_forecast_days=forecast_days))
 
     return ToolRegistry(tools)

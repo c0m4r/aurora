@@ -108,6 +108,11 @@ tools:
     #   my_blog: "https://example.com/feed.xml"
     #   lwn_weekly: "https://lwn.net/headlines/weekly/rss"
 
+  # ── Weather forecast ─────────────────────────────────────────────────────
+  weather:
+    enabled: true
+    default_forecast_days: 3    # Number of forecast days to return (1–16)
+
 # ─── Memory ─────────────────────────────────────────────────────────────────
 memory:
   enabled: true

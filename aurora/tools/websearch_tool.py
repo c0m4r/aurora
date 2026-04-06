@@ -146,7 +146,8 @@ class WebSearchTool(BaseTool):
                     "url": {
                         "type": "string",
                         "description": (
-                            "Direct URL to fetch (must be on a whitelisted domain). "
+                            "Direct URL to fetch (must be on a whitelisted domain, "
+                            "unless `allow_any_url` is set to true). "
                             "Do NOT provide `query` when using this."
                         ),
                     },
@@ -165,6 +166,13 @@ class WebSearchTool(BaseTool):
                         "type": "boolean",
                         "description": "Extract full page text from top results (default true). Only for `query` mode.",
                     },
+                    "allow_any_url": {
+                        "type": "boolean",
+                        "description": (
+                            "If true, bypass the whitelist and fetch any URL. "
+                            "ONLY set this to true after the user has explicitly approved fetching the URL."
+                        ),
+                    },
                 },
             },
         )
@@ -175,10 +183,11 @@ class WebSearchTool(BaseTool):
         url: str | None = None,
         num_results: int | None = None,
         fetch_content: bool | None = None,
+        allow_any_url: bool = False,
         **_,
     ) -> str:
         if url:
-            return await self._fetch_url(url)
+            return await self._fetch_url(url, allow_any=allow_any_url)
         if query:
             return await self._search(
                 query,
@@ -189,12 +198,15 @@ class WebSearchTool(BaseTool):
 
     # ── Direct URL fetch ──────────────────────────────────────────────────────
 
-    async def _fetch_url(self, url: str) -> str:
-        if not self._is_whitelisted(url):
+    async def _fetch_url(self, url: str, allow_any: bool = False) -> str:
+        if not self._is_whitelisted(url) and not allow_any:
             host = urlparse(url).netloc
             return (
-                f"Domain '{host}' is not on the whitelist.\n"
-                "Add it to `tools.websearch.whitelist` in config.yaml to allow direct fetching."
+                f"⚠️ Domain '{host}' is not on the whitelist.\n\n"
+                "To fetch this URL, the user must approve it first.\n"
+                f"**Do you want to fetch {url}?** Reply 'yes' or 'accept' to proceed, "
+                "or decline if you don't trust this source.\n\n"
+                "(If the user approves, you can retry with the `allow_any_url` parameter set to true.)"
             )
         html = await self._get_html(url)
         if not html:
