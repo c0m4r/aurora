@@ -154,7 +154,16 @@ class SSHTool(BaseTool):
                 "Use this for: system info (uname, uptime, free, df), process inspection "
                 "(ps, top, pgrep), log reading (journalctl, tail, grep), network state "
                 "(ss, ip addr, ping), service status (systemctl status), file browsing, "
-                "docker/kubernetes inspection, and general diagnostics."
+                "docker/kubernetes inspection, and other tasks. "
+                "When using SSH to run commands on remote servers, you MUST always use **non-interactive** methods. "
+                "Never run commands that require user input or that will hang indefinitely. "
+                "Examples: "
+                "- Use `apt-get -y` instead of `apt` for unattended operations (e.g., `apt-get -y full-upgrade`) "
+                "- Use `-y` flag to auto-confirm prompts for apt, yum, dnf, etc. or --noconfirm for pacman "
+                "- For dpkg, use `DEBIAN_FRONTEND=noninteractive` when needed "
+                "- Example: `DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade` "
+                "- Never run interactive tools like `top`, `htop`, `less`, `vim` directly, "
+                "use `timeout` to prevent hanging: `timeout 2 top -d1` or `top -d1 -n1` (exit after 1 iteration)"
             ),
             parameters={
                 "type": "object",
