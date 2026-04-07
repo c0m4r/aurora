@@ -807,6 +807,35 @@ async function sendMessage(text, images, videos) {
             tools: event.tools,
             history: event.history,
           };
+          if (event.history_summary) {
+            payload.history_summary = event.history_summary;
+          }
+
+          // Build conversation history summary
+          let historyHtml = '';
+          if (event.history && event.history.length > 0) {
+            const items = event.history.map((msg, i) => {
+              const role = msg.role || '?';
+              const roleIcon = role === 'user' ? '👤' : role === 'assistant' ? '🤖' : role === 'system' ? '⚙️' : '❓';
+              let content = '';
+              if (msg.type === 'tool_use') {
+                content = `🔧 <strong>${escHtml(msg.name || '')}</strong>(${escHtml(JSON.stringify(msg.input || {}))})`;
+              } else if (msg.type === 'tool_result') {
+                const preview = (msg.content || '').substring(0, 200);
+                content = `📥 Result for ${escHtml(msg.for_id || '')}${msg.error ? ' <span style="color:var(--red)">(error)</span>' : ''}: <code>${escHtml(preview)}</code>`;
+              } else if (msg.type === 'thinking') {
+                content = `💭 <em>(${(msg.content || '').length} chars of thinking)</em>`;
+              } else if (msg.type === 'image' || msg.type === 'video') {
+                content = `${msg.type} (${msg.media_type}, ${(msg.data_length || 0) / 1024}KB)`;
+              } else {
+                const preview = (msg.content || '').substring(0, 200);
+                content = escHtml(preview);
+              }
+              return `<div class="debug-msg-item"><span class="debug-msg-role">${roleIcon} ${role}</span> <span class="debug-msg-content">${content}</span></div>`;
+            }).join('');
+            historyHtml = `<div class="debug-history-section"><h4 class="debug-section-title">📜 Conversation History (${event.history.length} messages)</h4>${items}</div>`;
+          }
+
           const jsonStr = JSON.stringify(payload, null, 2);
           const highlighted = hljsSyntaxHighlight(jsonStr);
 
@@ -818,7 +847,7 @@ async function sendMessage(text, images, videos) {
               <span class="debug-label">Debug — Full Model Payload</span>
               <span class="debug-toggle">▶</span>
             </div>
-            <div class="debug-body"><pre class="debug-json hljs">${highlighted}</pre></div>
+            <div class="debug-body">${historyHtml}<pre class="debug-json hljs">${highlighted}</pre></div>
           `;
           streamBody.appendChild(debugBlock);
           scrollToBottom();

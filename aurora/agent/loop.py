@@ -112,45 +112,63 @@ class AgentLoop:
         # Working message history (mutable copy)
         history = list(messages)
 
+        logger.debug("AgentLoop.run: starting with %d message(s) in history, model=%s", len(history), model_id)
+        for idx, msg in enumerate(history):
+            text_preview = (msg.text or "")[:120]
+            block_types = [b.type for b in msg.blocks]
+            logger.debug("  history[%d] role=%s text=%r blocks=%s", idx, msg.role, text_preview, block_types)
+
         # Emit debug payload at the start
         if debug:
             # Serialize history into a simple dict format
             serialized_history = []
             for msg in history:
-                for blk in msg.blocks:
-                    if blk.type == "text":
-                        serialized_history.append({"role": msg.role, "content": blk.text})
-                    elif blk.type == "thinking":
-                        serialized_history.append({"role": msg.role, "type": "thinking", "content": blk.text})
-                    elif blk.type == "tool_use":
-                        serialized_history.append({
-                            "role": msg.role,
-                            "type": "tool_use",
-                            "id": blk.tool_use_id,
-                            "name": blk.tool_name,
-                            "input": blk.tool_input,
-                        })
-                    elif blk.type == "tool_result":
-                        serialized_history.append({
-                            "role": msg.role,
-                            "type": "tool_result",
-                            "for_id": blk.tool_result_for_id,
-                            "content": blk.text or "",
-                            "error": bool(getattr(blk, "tool_is_error", False)),
-                        })
-                    elif blk.type in ("image", "video"):
-                        serialized_history.append({
-                            "role": msg.role,
-                            "type": blk.type,
-                            "media_type": getattr(blk, "media_type", ""),
-                            "data_length": len(getattr(blk, "data", "")),
-                        })
+                if msg.blocks:
+                    for blk in msg.blocks:
+                        if blk.type == "text":
+                            serialized_history.append({"role": msg.role, "content": blk.text})
+                        elif blk.type == "thinking":
+                            serialized_history.append({"role": msg.role, "type": "thinking", "content": blk.text})
+                        elif blk.type == "tool_use":
+                            serialized_history.append({
+                                "role": msg.role,
+                                "type": "tool_use",
+                                "id": blk.tool_use_id,
+                                "name": blk.tool_name,
+                                "input": blk.tool_input,
+                            })
+                        elif blk.type == "tool_result":
+                            serialized_history.append({
+                                "role": msg.role,
+                                "type": "tool_result",
+                                "for_id": blk.tool_result_for_id,
+                                "content": blk.tool_result_content or "",
+                                "error": bool(getattr(blk, "tool_is_error", False)),
+                            })
+                        elif blk.type in ("image", "video"):
+                            serialized_history.append({
+                                "role": msg.role,
+                                "type": blk.type,
+                                "media_type": getattr(blk, "image_media_type", getattr(blk, "video_media_type", "")),
+                                "data_length": len(getattr(blk, "image_data", getattr(blk, "video_data", ""))),
+                            })
+                elif msg.text:
+                    # Message with only text (no blocks)
+                    serialized_history.append({"role": msg.role, "content": msg.text})
 
             yield {
                 "type": "debug",
                 "system": system,
                 "tools": tool_schemas,
                 "history": serialized_history,
+                "history_summary": {
+                    "total_messages": len(history),
+                    "by_role": {
+                        "user": sum(1 for m in history if m.role == "user"),
+                        "assistant": sum(1 for m in history if m.role == "assistant"),
+                        "system": sum(1 for m in history if m.role == "system"),
+                    },
+                },
             }
             logger.debug("Debug payload emitted (%d history messages)", len(serialized_history))
 

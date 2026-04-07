@@ -84,7 +84,19 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
 
     # Load history and convert to NormalizedMessages
     raw_msgs = await store.get_messages(conv_id)
+    logger.debug("Loaded %d stored messages for conversation %s", len(raw_msgs), conv_id)
+    for idx, msg in enumerate(raw_msgs):
+        role = msg.get("role", "?")
+        content_preview = (msg.get("content", "") or "")[:120]
+        has_blocks = bool(msg.get("blocks"))
+        logger.debug("  msg[%d] role=%s content=%r has_blocks=%s", idx, role, content_preview, has_blocks)
     history = _to_normalized(raw_msgs)
+    logger.debug("Normalized into %d message(s) for agent loop", len(history))
+    for idx, nm in enumerate(history):
+        role = nm.role
+        text_preview = (nm.text or "")[:120]
+        block_types = [b.type for b in nm.blocks]
+        logger.debug("  normalized[%d] role=%s text=%r blocks=%s", idx, role, text_preview, block_types)
 
     # Inject images and videos into the last user message (media before text for optimal performance)
     if (req.images or req.videos) and history and history[-1].role == "user":

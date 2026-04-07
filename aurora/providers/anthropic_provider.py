@@ -109,6 +109,15 @@ class AnthropicProvider(BaseProvider):
         **kwargs: Any,
     ) -> AsyncIterator[StreamEvent]:
         api_messages = _to_api_messages(messages)
+        logger.debug(
+            "AnthropicProvider.stream: %d normalized input messages -> %d API messages, model=%s",
+            len(messages), len(api_messages), model,
+        )
+        for idx, api_msg in enumerate(api_messages):
+            role = api_msg.get("role", "?")
+            content = api_msg.get("content", "")
+            content_preview = content[:150] if isinstance(content, str) else str(content)[:150]
+            logger.debug("  api_msg[%d] role=%s content=%r", idx, role, content_preview)
 
         anthropic_tools = [
             {

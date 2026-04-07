@@ -433,6 +433,41 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   overflow-y: auto;
 }
 .debug-block.open .debug-body { display: block; }
+.debug-history-section {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(210, 153, 34, 0.2);
+}
+.debug-section-title {
+  font-size: 13px;
+  color: var(--yellow);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.debug-msg-item {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.debug-msg-role {
+  flex-shrink: 0;
+  min-width: 90px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.debug-msg-content {
+  color: var(--text-muted);
+  word-break: break-word;
+  line-height: 1.4;
+}
+.debug-msg-content code {
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
 .debug-json {
   font-family: var(--font-mono);
   font-size: 12px;
