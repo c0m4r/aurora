@@ -398,7 +398,10 @@ function renderSavedToolBlocks(blocks) {
   return blocks.filter(b => b.type === 'tool_use').map(tc => {
     const res = results[tc.id];
     const inputStr = JSON.stringify(tc.input || {}, null, 2);
-    const preview = tc.input?.command || tc.input?.query || tc.input?.url || tc.input?.path || '';
+    let preview = tc.input?.command || tc.input?.query || tc.input?.url || tc.input?.path || '';
+    if (tc.name === 'file_write' && tc.input?.path) preview = (tc.input.append ? 'Appended to ' : 'Wrote ') + tc.input.path;
+    else if (tc.name === 'file_edit' && tc.input?.path) preview = 'Edited ' + tc.input.path;
+    else if (tc.name === 'file_read' && tc.input?.path) preview = 'Read ' + tc.input.path;
     const previewHtml = preview
       ? `<span class="tool-preview">${escHtml(preview.length > 80 ? preview.slice(0, 80) + '…' : preview)}</span>`
       : '';
@@ -437,6 +440,30 @@ function renderToolOutput(toolName, output) {
     }).join('\n');
     return `<pre class="diff-output">${highlighted}</pre>`;
   }
+
+  // file_write returns header + fenced code block — render with syntax highlighting
+  if ((toolName === 'file_write') && output.includes('```')) {
+    const fenceMatch = output.match(/^(.*?)\n\n```(\w*)\n([\s\S]*?)\n```$/);
+    if (fenceMatch) {
+      const header = fenceMatch[1];
+      const lang = fenceMatch[2];
+      const code = fenceMatch[3];
+      let highlighted;
+      try {
+        if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+          highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+        } else if (typeof hljs !== 'undefined') {
+          highlighted = hljs.highlightAuto(code).value;
+        }
+      } catch (_) { /* hljs failed */ }
+      if (!highlighted) highlighted = escHtml(code);
+      return `<div class="file-preview">` +
+        `<div class="file-preview-header">${escHtml(header)}</div>` +
+        `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code>` +
+        `<button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div></div>`;
+    }
+  }
+
   // Default: plain escaped output
   return `<pre>${escHtml(output)}</pre>`;
 }
@@ -900,7 +927,17 @@ async function sendMessage(text, images, videos) {
           }
           // Command preview for tool header
           const input = event.input || {};
-          const preview = input.command || input.query || input.url || input.path || '';
+          let preview = input.command || input.query || input.url || input.path || '';
+          // Contextual action labels for file tools
+          if (event.name === 'file_write' && input.path) {
+            preview = (input.append ? 'Appending to ' : 'Writing ') + input.path;
+          } else if (event.name === 'file_edit' && input.path) {
+            preview = 'Editing ' + input.path;
+          } else if (event.name === 'file_read' && input.path) {
+            preview = 'Reading ' + input.path;
+          } else if (event.name === 'ssh' && input.command) {
+            preview = input.command;
+          }
           const previewHtml = preview
             ? `<span class="tool-preview">${escHtml(preview.length > 80 ? preview.slice(0, 80) + '…' : preview)}</span>`
             : '';
@@ -1537,7 +1574,7 @@ $('#sidebar-toggle')?.addEventListener('click', () => {
 function createWelcome() {
   return `<div id="welcome" class="welcome">
     <div class="welcome-icon">🪼</div>
-    <h2>Agent</h2>
+    <h2>Aurora</h2>
     <p>A general-purpose AI assistant with Linux server access, web search, and local file storage.</p>
     <div class="welcome-examples">
       <button class="example-btn">briefly describe the tools you're able to use</button>

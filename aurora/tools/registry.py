@@ -31,6 +31,17 @@ class ToolRegistry:
         return await tool.execute(**kwargs)
 
 
+def _to_host_dicts(raw_hosts: list) -> list[dict]:
+    """Convert config host objects (or dicts) to plain dicts."""
+    result: list[dict] = []
+    for h in raw_hosts:
+        if hasattr(h, "__dict__"):
+            result.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
+        elif isinstance(h, dict):
+            result.append(h)
+    return result
+
+
 def build_registry(cfg: Any) -> ToolRegistry:
     """Instantiate tools from config and return a ToolRegistry."""
     from .datetime_tool import DateTimeTool
@@ -48,53 +59,28 @@ def build_registry(cfg: Any) -> ToolRegistry:
         FileReadTool(),
         FileWriteTool(),
         FileEditTool(),
-        WeatherTool(),
     ]
 
     tcfg = getattr(cfg, "tools", None)
 
-    # SSH
+    # SSH hosts (shared by SSH, SCP, and Server Probe tools)
     ssh = getattr(tcfg, "ssh", None) if tcfg else None
-    if ssh and getattr(ssh, "enabled", False):
-        raw_hosts = getattr(ssh, "hosts", []) or []
-        host_dicts: list[dict] = []
-        for h in raw_hosts:
-            if hasattr(h, "__dict__"):
-                host_dicts.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
-            elif isinstance(h, dict):
-                host_dicts.append(h)
-        if host_dicts:
-            allow_writes = bool(getattr(ssh, "allow_writes", False))
-            tools.append(SSHTool(host_dicts, allow_writes=allow_writes))
+    ssh_host_dicts = _to_host_dicts(getattr(ssh, "hosts", []) or []) if ssh else []
+
+    if ssh and getattr(ssh, "enabled", False) and ssh_host_dicts:
+        allow_writes = bool(getattr(ssh, "allow_writes", False))
+        tools.append(SSHTool(ssh_host_dicts, allow_writes=allow_writes))
 
     # SCP Upload — reuses SSH hosts
     scp_cfg = getattr(tcfg, "scp_upload", None) if tcfg else None
-    if scp_cfg and getattr(scp_cfg, "enabled", False):
-        ssh_hosts_raw = getattr(ssh, "hosts", []) or [] if ssh else []
-        ssh_host_dicts: list[dict] = []
-        for h in ssh_hosts_raw:
-            if hasattr(h, "__dict__"):
-                ssh_host_dicts.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
-            elif isinstance(h, dict):
-                ssh_host_dicts.append(h)
-        if ssh_host_dicts:
-            tools.append(SCPUploadTool(ssh_host_dicts))
+    if scp_cfg and getattr(scp_cfg, "enabled", False) and ssh_host_dicts:
+        tools.append(SCPUploadTool(ssh_host_dicts))
 
-    # Server Probe
+    # Server Probe — reuses SSH hosts
     probe_cfg = getattr(tcfg, "server_probe", None) if tcfg else None
-    if probe_cfg and getattr(probe_cfg, "enabled", False):
-        # Reuse SSH hosts for probing
-        ssh_hosts_raw = getattr(ssh, "hosts", []) or [] if ssh else []
-        ssh_host_dicts: list[dict] = []
-        for h in ssh_hosts_raw:
-            if hasattr(h, "__dict__"):
-                ssh_host_dicts.append({k: v for k, v in h.__dict__.items() if not k.startswith("_")})
-            elif isinstance(h, dict):
-                ssh_host_dicts.append(h)
-
-        if ssh_host_dicts:
-            ssh_probe_enabled = bool(getattr(probe_cfg, "enable_ssh_probe", False))
-            tools.append(ServerProbeTool(ssh_host_dicts, ssh_enabled=ssh_probe_enabled))
+    if probe_cfg and getattr(probe_cfg, "enabled", False) and ssh_host_dicts:
+        ssh_probe_enabled = bool(getattr(probe_cfg, "enable_ssh_probe", False))
+        tools.append(ServerProbeTool(ssh_host_dicts, ssh_enabled=ssh_probe_enabled))
 
     # Web search / fetch
     ws = getattr(tcfg, "websearch", None) if tcfg else None
@@ -122,7 +108,7 @@ def build_registry(cfg: Any) -> ToolRegistry:
             extra_feeds = extra_raw
         tools.append(RSSFeedTool(max_items=max_items, extra_feeds=extra_feeds))
 
-    # Weather forecast
+    # Weather forecast (no API key needed — enabled by default)
     weather_cfg = getattr(tcfg, "weather", None) if tcfg else None
     weather_enabled = getattr(weather_cfg, "enabled", True) if weather_cfg else True
     if weather_enabled:

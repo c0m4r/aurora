@@ -526,6 +526,28 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
 }
 .tool-section.error pre { color: var(--red); }
 
+/* ─── File preview (file_write output) ───────────────────────────────────── */
+.file-preview { margin: 0; }
+.file-preview-header {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+  border-bottom: 1px solid var(--tool-border);
+  font-family: var(--font-mono);
+}
+.file-preview .code-block-wrapper {
+  margin: 0;
+}
+.file-preview .code-block-wrapper pre {
+  margin: 0;
+  border-radius: 0;
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.file-preview .code-block-wrapper pre:hover .code-copy-btn { opacity: 1; }
+
 /* ─── Streaming cursor ────────────────────────────────────────────────────── */
 .cursor { display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 1px; animation: blink 1s step-end infinite; vertical-align: text-bottom; }
 @keyframes blink { 50% { opacity: 0; } }

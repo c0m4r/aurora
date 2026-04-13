@@ -120,7 +120,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
     solutions = await store.search_solutions(req.message, limit=3)
 
     tools = build_registry(cfg)
-    loop = AgentLoop(registry, tools, cfg)
+    loop = AgentLoop(registry, tools, cfg, conversation_id=conv_id)
 
     cfg_auto_learn = getattr(getattr(cfg, "agent", None), "auto_learn", False)
     do_learn = req.learn if req.learn is not None else cfg_auto_learn
@@ -344,6 +344,12 @@ async def rename_conversation(
 @router.delete("/conversations/{cid}")
 async def delete_conversation(cid: str, _auth: str = Depends(require_api_key)):
     await get_store().delete_conversation(cid)
+    # Clean up session files if they exist
+    from pathlib import Path
+    import shutil
+    session_dir = Path.cwd() / "files" / "sessions" / cid
+    if session_dir.is_dir():
+        shutil.rmtree(session_dir, ignore_errors=True)
     return {"ok": True}
 
 

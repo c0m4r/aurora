@@ -10,29 +10,7 @@ import os
 from pathlib import Path
 
 from .base import BaseTool, ToolDefinition
-
-# Sandbox root — always resolved relative to cwd at call time so it works
-# regardless of where the server is started from.
-_SANDBOX_NAME = "files"
-
-
-def _sandbox() -> Path:
-    root = Path.cwd() / _SANDBOX_NAME
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def _resolve(rel_path: str) -> Path | None:
-    """Resolve a relative path inside the sandbox. Returns None on traversal."""
-    sandbox = _sandbox()
-    # Normalise: strip leading slashes / dots so the path stays relative
-    clean = rel_path.lstrip("/").lstrip("./")
-    resolved = (sandbox / clean).resolve()
-    try:
-        resolved.relative_to(sandbox.resolve())
-        return resolved
-    except ValueError:
-        return None  # path traversal attempt
+from .sandbox import sandbox as _sandbox, resolve as _resolve, list_all_sessions
 
 
 class FileReadTool(BaseTool):
@@ -61,14 +39,33 @@ class FileReadTool(BaseTool):
                         "description": "Max lines to return for large files (default: 500).",
                         "default": 500,
                     },
+                    "all_sessions": {
+                        "type": "boolean",
+                        "description": (
+                            "If true, list files from ALL conversation sessions "
+                            "(not just the current one). Only useful with path='.' "
+                            "when the user asks about files from other conversations."
+                        ),
+                        "default": False,
+                    },
                 },
                 "required": [],
             },
         )
 
-    async def execute(self, path: str = ".", max_lines: int = 500, **_) -> str:
+    async def execute(self, path: str = ".", max_lines: int = 500, all_sessions: bool = False, **_) -> str:
+        # Cross-session listing
+        if all_sessions and (not path or path in (".", "")):
+            return _list_all_sessions()
+
         target = _resolve(path or ".")
         if target is None:
+            if path and path.strip().startswith("~"):
+                return (
+                    "[BLOCKED] Tilde paths like '~/...' are not supported. "
+                    "All paths are relative to the ./files/ sandbox. "
+                    "Use just the filename, e.g. 'test.py' instead of '~/test.py'."
+                )
             return "[BLOCKED] Path traversal outside ./files/ is not allowed."
 
         if not target.exists():
@@ -105,6 +102,9 @@ class FileWriteTool(BaseTool):
                 "You can also append to an existing file. "
                 "Parent directories are created automatically. "
                 "All paths are relative to ./files/ — you cannot write outside it. "
+                "IMPORTANT: Do NOT include 'files/' or './files/' in the path — "
+                "it is added automatically. Use 'report.md', not './files/report.md'. "
+                "Do NOT use tilde paths like '~/file.py' — use just 'file.py'. "
                 "Use this to save reports, scripts, config snippets, notes, or any "
                 "content the user wants to keep."
             ),
@@ -139,6 +139,12 @@ class FileWriteTool(BaseTool):
 
         target = _resolve(path)
         if target is None:
+            if path and path.strip().startswith("~"):
+                return (
+                    "[BLOCKED] Tilde paths like '~/...' are not supported. "
+                    "All paths are relative to the ./files/ sandbox. "
+                    "Use just the filename, e.g. 'script.py' instead of '~/script.py'."
+                )
             return "[BLOCKED] Path traversal outside ./files/ is not allowed."
 
         # Create parent directories
@@ -155,7 +161,32 @@ class FileWriteTool(BaseTool):
 
         action = "Appended to" if append else "Wrote"
         size = target.stat().st_size
-        return f"{action} files/{path} ({size} bytes)."
+        line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        ext = Path(path).suffix.lstrip(".")
+        lang = _EXT_TO_LANG.get(ext, ext) if ext else ""
+
+        # Build result with an embedded code preview for the frontend
+        header = f"{action} files/{path} ({size} bytes, {line_count} lines)."
+        # Include full content as a fenced code block so the frontend can
+        # render it with syntax highlighting.
+        preview = content if len(content) <= 20_000 else content[:20_000] + "\n…[truncated]"
+        return f"{header}\n\n```{lang}\n{preview}\n```"
+
+
+# Common file extensions → highlight.js language identifiers
+_EXT_TO_LANG: dict[str, str] = {
+    "py": "python", "js": "javascript", "ts": "typescript", "jsx": "jsx",
+    "tsx": "tsx", "rb": "ruby", "rs": "rust", "go": "go", "java": "java",
+    "c": "c", "cpp": "cpp", "h": "c", "hpp": "cpp", "cs": "csharp",
+    "sh": "bash", "bash": "bash", "zsh": "bash", "fish": "fish",
+    "html": "html", "htm": "html", "css": "css", "scss": "scss",
+    "json": "json", "yaml": "yaml", "yml": "yaml", "toml": "toml",
+    "xml": "xml", "sql": "sql", "md": "markdown", "txt": "",
+    "dockerfile": "dockerfile", "makefile": "makefile",
+    "conf": "ini", "ini": "ini", "cfg": "ini", "env": "bash",
+    "php": "php", "pl": "perl", "lua": "lua", "swift": "swift",
+    "kt": "kotlin", "r": "r", "m": "matlab",
+}
 
 
 def _list_dir(d: Path) -> str:
@@ -182,6 +213,26 @@ def _list_dir(d: Path) -> str:
     rel_dir = str(d.relative_to(sandbox))
     header = f"files/{rel_dir}/" if rel_dir != "." else "files/"
     return f"{header}\n" + "\n".join(lines)
+
+
+def _list_all_sessions() -> str:
+    """List files across all conversation sessions."""
+    sessions = list_all_sessions()
+    if not sessions:
+        return "No session files found."
+
+    lines = ["=== Files across all sessions ===\n"]
+    root = Path.cwd() / "files" / "sessions"
+    for sid in sessions:
+        session_dir = root / sid
+        file_count = sum(1 for f in session_dir.rglob("*") if f.is_file())
+        lines.append(f"  Session {sid[:12]}…  ({file_count} file{'s' if file_count != 1 else ''})")
+        for f in sorted(session_dir.rglob("*")):
+            if f.is_file():
+                rel = f.relative_to(session_dir)
+                lines.append(f"    📄  {rel}  ({_human_size(f.stat().st_size)})")
+    lines.append(f"\nTotal: {len(sessions)} session(s)")
+    return "\n".join(lines)
 
 
 def _human_size(b: int) -> str:

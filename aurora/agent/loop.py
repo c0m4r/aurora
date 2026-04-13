@@ -5,43 +5,29 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 from zoneinfo import ZoneInfoNotFoundError
 
 from ..providers.base import ContentBlock, NormalizedMessage, StreamEvent
 from ..providers.registry import ProviderRegistry
 from ..tools.registry import ToolRegistry
+from ..tools.sandbox import set_session
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SYSTEM = """You are a general-purpose AI assistant with Linux system administration expertise.
+# ─── System prompt loading ───────────────────────────────────────────────────
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
-## Tools Available
-- **ssh** — run commands on remote Linux servers. Read-only by default (information gathering). \
-Only use write/modification commands when the user has *explicitly* asked you to make a change. \
-Before running any state-changing command, state clearly what it will do.
-- **web** — search the web (DuckDuckGo) or fetch a specific URL from a whitelisted domain.
-- **weather** — get current weather and forecast for any location using Open-Meteo (no API key needed).
-- **file_read** — read or list files inside the local ./files/ directory.
-- **file_write** — create or append files inside the local ./files/ directory. \
-Use to save reports, scripts, configs, notes, or any output the user wants to keep.
-- **file_edit** — make precise edits to existing files using SEARCH/REPLACE blocks. \
-Read the file first, then use exact content in SEARCH blocks. Returns a git-style diff. \
-Prefer this over rewriting the entire file with file_write.
-- **scp_upload** — upload files from ./files/ to remote servers via SCP (uses SSH host config).
-- **get_datetime** — get the current date, time, timezone, and handy relative timestamps for queries.
 
-## Working Principles
-1. **Be helpful and direct.** Answer questions, solve problems, and get things done.
-2. **SSH read-only by default.** Gather information first, never modify a system unless asked.
-3. **Before any write operation on a server**, tell the user exactly what the command will do.
-4. **Be specific.** Quote actual output, log lines, command results — don't paraphrase.
-5. **Use files/** to persist useful output (reports, generated scripts, configs) so the user can retrieve it.
-6. **Edit, don't rewrite.** When modifying existing files, use `file_edit` with SEARCH/REPLACE blocks \
-instead of `file_write` to rewrite the entire file. This is faster, safer, and shows the user a diff.
-7. **Search when unsure.** Use `web` to look up docs, error messages, or current release versions \
-rather than relying on potentially stale training data.
-"""
+def _load_prompt(name: str) -> str:
+    """Load a prompt from the prompts/ directory. Falls back to empty string."""
+    path = _PROMPTS_DIR / name
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        logger.warning("Prompt file not found: %s", path)
+        return ""
 
 
 def _current_datetime_block() -> str:
@@ -66,7 +52,8 @@ def _build_system(cfg: Any, injected_solutions: list[dict]) -> str:
     if agent_cfg:
         extra = getattr(agent_cfg, "system_prompt_extra", "") or ""
 
-    system = _DEFAULT_SYSTEM + f"\n\n## Current Time\n{_current_datetime_block()}\n"
+    system = _load_prompt("system.md")
+    system += f"\n\n## Current Time\n{_current_datetime_block()}\n"
     if extra:
         system += f"\n\n## Additional Instructions\n{extra}"
 
@@ -87,10 +74,12 @@ class AgentLoop:
         registry: ProviderRegistry,
         tools: ToolRegistry,
         cfg: Any,
+        conversation_id: str | None = None,
     ):
         self.registry = registry
         self.tools = tools
         self.cfg = cfg
+        self.conversation_id = conversation_id
         self._max_iter = int(
             getattr(getattr(cfg, "agent", None), "max_tool_iterations", 15) or 15
         )
@@ -106,6 +95,9 @@ class AgentLoop:
         debug: bool = False,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
+        # Scope file tools to this conversation's session directory
+        set_session(self.conversation_id)
+
         system = _build_system(self.cfg, injected_solutions or [])
         tool_schemas = self.tools.schemas()
 
@@ -291,8 +283,9 @@ async def run_agent(
     messages: list[NormalizedMessage],
     model_id: str,
     injected_solutions: list[dict] | None = None,
+    conversation_id: str | None = None,
     **kwargs: Any,
 ) -> AsyncIterator[dict]:
-    loop = AgentLoop(registry, tools, cfg)
+    loop = AgentLoop(registry, tools, cfg, conversation_id=conversation_id)
     async for event in loop.run(messages, model_id, injected_solutions, **kwargs):
         yield event

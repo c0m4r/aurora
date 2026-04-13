@@ -7,29 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from .base import BaseTool, ToolDefinition
-
-# Reuse the sandbox helpers from file_tool
-_SANDBOX_NAME = "files"
+from .sandbox import resolve as _resolve
 
 logger = logging.getLogger(__name__)
-
-
-def _sandbox() -> Path:
-    root = Path.cwd() / _SANDBOX_NAME
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def _resolve(rel_path: str) -> Path | None:
-    """Resolve a relative path inside the sandbox. Returns None on traversal."""
-    sandbox = _sandbox()
-    clean = rel_path.lstrip("/").lstrip("./")
-    resolved = (sandbox / clean).resolve()
-    try:
-        resolved.relative_to(sandbox.resolve())
-        return resolved
-    except ValueError:
-        return None  # path traversal attempt
 
 
 class SCPUploadTool(BaseTool):

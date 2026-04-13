@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, AsyncIterator
 
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 
 from .base import (
     BaseProvider,
@@ -237,65 +237,85 @@ class OpenAIProvider(BaseProvider):
         # Accumulate tool call deltas by index
         tc_buf: dict[int, dict] = {}
 
-        stream_ctx = await self._client.chat.completions.create(**params)
-
         logger.debug("OpenAI stream params: %s", {k: v for k, v in params.items() if k != "messages"})
 
-        async for chunk in stream_ctx:
-            logger.debug("RAW CHUNK: %s", chunk.model_dump_json(exclude_none=True))
+        try:
+            stream_ctx = await self._client.chat.completions.create(**params)
 
-            choice = chunk.choices[0] if chunk.choices else None
-            if choice and choice.delta:
-                delta = choice.delta
+            async for chunk in stream_ctx:
+                logger.debug("RAW CHUNK: %s", chunk.model_dump_json(exclude_none=True))
 
-                # Log all delta fields for debugging
-                logger.debug(
-                    "DELTA fields: role=%s content=%s thinking=%s tool_calls=%s extras=%s",
-                    delta.role,
-                    repr(delta.content[:80]) if delta.content else None,
-                    repr(getattr(delta, "thinking", None)),
-                    bool(delta.tool_calls),
-                    getattr(delta, "model_extra", {}),
-                )
+                choice = chunk.choices[0] if chunk.choices else None
+                if choice and choice.delta:
+                    delta = choice.delta
 
-                # Ollama returns thinking in delta.reasoning (model_extra)
-                thinking_text = (
-                    getattr(delta, "reasoning", None)
-                    or getattr(delta, "thinking", None)
-                    or (getattr(delta, "model_extra", None) or {}).get("reasoning")
-                )
-                # do not add use_thinking condition here
-                if thinking_text:
-                    yield StreamEvent(type="thinking_delta", delta=thinking_text)
+                    # Log all delta fields for debugging
+                    logger.debug(
+                        "DELTA fields: role=%s content=%s thinking=%s tool_calls=%s extras=%s",
+                        delta.role,
+                        repr(delta.content[:80]) if delta.content else None,
+                        repr(getattr(delta, "thinking", None)),
+                        bool(delta.tool_calls),
+                        getattr(delta, "model_extra", {}),
+                    )
 
-                if delta.content:
-                    if think_parser:
-                        for ev in think_parser.feed(delta.content):
-                            yield ev
-                    else:
-                        yield StreamEvent(type="text_delta", delta=delta.content)
+                    # Ollama returns thinking in delta.reasoning (model_extra)
+                    thinking_text = (
+                        getattr(delta, "reasoning", None)
+                        or getattr(delta, "thinking", None)
+                        or (getattr(delta, "model_extra", None) or {}).get("reasoning")
+                    )
+                    # do not add use_thinking condition here
+                    if thinking_text:
+                        yield StreamEvent(type="thinking_delta", delta=thinking_text)
 
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in tc_buf:
-                            tc_buf[idx] = {"id": "", "name": "", "args": ""}
-                        if tc_delta.id:
-                            tc_buf[idx]["id"] = tc_delta.id
-                        if tc_delta.function:
-                            if tc_delta.function.name:
-                                tc_buf[idx]["name"] = tc_delta.function.name
-                            if tc_delta.function.arguments:
-                                tc_buf[idx]["args"] += tc_delta.function.arguments
+                    if delta.content:
+                        if think_parser:
+                            for ev in think_parser.feed(delta.content):
+                                yield ev
+                        else:
+                            yield StreamEvent(type="text_delta", delta=delta.content)
 
-            if chunk.usage:
-                yield StreamEvent(
-                    type="usage",
-                    usage=TokenUsage(
-                        input_tokens=chunk.usage.prompt_tokens or 0,
-                        output_tokens=chunk.usage.completion_tokens or 0,
-                    ),
-                )
+                    if delta.tool_calls:
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            if idx not in tc_buf:
+                                tc_buf[idx] = {"id": "", "name": "", "args": ""}
+                            if tc_delta.id:
+                                tc_buf[idx]["id"] = tc_delta.id
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    tc_buf[idx]["name"] = tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    tc_buf[idx]["args"] += tc_delta.function.arguments
+
+                if chunk.usage:
+                    yield StreamEvent(
+                        type="usage",
+                        usage=TokenUsage(
+                            input_tokens=chunk.usage.prompt_tokens or 0,
+                            output_tokens=chunk.usage.completion_tokens or 0,
+                        ),
+                    )
+
+        except APIConnectionError as exc:
+            base_url = self._client.base_url
+            msg = f"Cannot connect to {self.name} at {base_url} — is the service running?"
+            if self.name == "ollama":
+                msg += " Try: `ollama serve`"
+            logger.error("%s: %s", msg, exc)
+            yield StreamEvent(type="error", error=msg)
+            return
+        except RateLimitError as exc:
+            msg = f"Rate limit reached for {self.name}. Please wait and try again."
+            logger.warning("%s: %s", msg, exc)
+            yield StreamEvent(type="error", error=msg)
+            return
+        except APIStatusError as exc:
+            msg = f"{self.name} API error {exc.status_code}: {exc.message}"
+            logger.error("%s", msg)
+            yield StreamEvent(type="error", error=msg)
+            return
 
         # Flush any buffered text from the think parser
         if think_parser:

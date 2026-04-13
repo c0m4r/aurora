@@ -105,14 +105,14 @@ class WebSearchTool(BaseTool):
         self.fetch_content = fetch_content
         self.max_content_length = max_content_length
         self.whitelist: list[str] = (
-            [d.lower().lstrip("www.") for d in whitelist]
+            [d.lower().removeprefix("www.") for d in whitelist]
             if whitelist is not None
-            else [d.lower().lstrip("www.") for d in DEFAULT_WHITELIST]
+            else [d.lower().removeprefix("www.") for d in DEFAULT_WHITELIST]
         )
 
     def _is_whitelisted(self, url: str) -> bool:
         try:
-            host = urlparse(url).netloc.lower().lstrip("www.")
+            host = urlparse(url).netloc.lower().removeprefix("www.")
             return any(host == w or host.endswith("." + w) for w in self.whitelist)
         except Exception:
             return False
