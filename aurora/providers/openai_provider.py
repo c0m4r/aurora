@@ -234,8 +234,13 @@ class OpenAIProvider(BaseProvider):
         if self.name == "ollama":
             params["extra_body"] = {"think": use_thinking}
 
-        # Accumulate tool call deltas by index
-        tc_buf: dict[int, dict] = {}
+        # Accumulate tool call deltas.
+        # Keyed by the provider's tool_call id when present (Ollama and similar
+        # providers emit each tool call complete in one chunk but always with
+        # index=0, so keying by index alone concatenates separate calls).
+        # Falls back to "idx:N" keys for providers that stream deltas without ids.
+        tc_buf: dict[str, dict] = {}
+        idx_to_key: dict[int, str] = {}
 
         logger.debug("OpenAI stream params: %s", {k: v for k, v in params.items() if k != "messages"})
 
@@ -279,35 +284,61 @@ class OpenAIProvider(BaseProvider):
                     if delta.tool_calls:
                         for tc_delta in delta.tool_calls:
                             idx = tc_delta.index
-                            if idx not in tc_buf:
-                                tc_buf[idx] = {"id": "", "name": "", "args": "", "started": False}
+                            # Decide which bucket this delta belongs to.
+                            # A fresh provider-assigned id always starts a new bucket;
+                            # otherwise we continue whichever bucket that index was
+                            # last attached to.
+                            key: str | None = None
                             if tc_delta.id:
-                                tc_buf[idx]["id"] = tc_delta.id
+                                if tc_delta.id in tc_buf:
+                                    key = tc_delta.id
+                                else:
+                                    key = tc_delta.id
+                                    tc_buf[key] = {
+                                        "id": tc_delta.id,
+                                        "name": "",
+                                        "args": "",
+                                        "started": False,
+                                    }
+                                if idx is not None:
+                                    idx_to_key[idx] = key
+                            elif idx is not None and idx in idx_to_key:
+                                key = idx_to_key[idx]
+                            else:
+                                # No id and no prior index mapping — synthesize one.
+                                key = f"idx:{idx if idx is not None else len(tc_buf)}"
+                                if key not in tc_buf:
+                                    tc_buf[key] = {
+                                        "id": key,
+                                        "name": "",
+                                        "args": "",
+                                        "started": False,
+                                    }
+                                if idx is not None:
+                                    idx_to_key[idx] = key
+
+                            bucket = tc_buf[key]
                             if tc_delta.function:
                                 if tc_delta.function.name:
-                                    tc_buf[idx]["name"] = tc_delta.function.name
+                                    bucket["name"] = tc_delta.function.name
                                 if tc_delta.function.arguments:
-                                    tc_buf[idx]["args"] += tc_delta.function.arguments
+                                    bucket["args"] += tc_delta.function.arguments
                             # Emit start event once we have id+name
-                            if (
-                                not tc_buf[idx]["started"]
-                                and tc_buf[idx]["id"]
-                                and tc_buf[idx]["name"]
-                            ):
-                                tc_buf[idx]["started"] = True
+                            if not bucket["started"] and bucket["id"] and bucket["name"]:
+                                bucket["started"] = True
                                 yield StreamEvent(
                                     type="tool_input_start",
-                                    tool_id=tc_buf[idx]["id"],
-                                    tool_name=tc_buf[idx]["name"],
+                                    tool_id=bucket["id"],
+                                    tool_name=bucket["name"],
                                 )
                             if (
                                 tc_delta.function
                                 and tc_delta.function.arguments
-                                and tc_buf[idx]["id"]
+                                and bucket["id"]
                             ):
                                 yield StreamEvent(
                                     type="tool_input_delta",
-                                    tool_id=tc_buf[idx]["id"],
+                                    tool_id=bucket["id"],
                                     delta=tc_delta.function.arguments,
                                 )
 

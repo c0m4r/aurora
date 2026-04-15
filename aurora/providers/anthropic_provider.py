@@ -155,10 +155,14 @@ class AnthropicProvider(BaseProvider):
 
                 if etype == "content_block_start":
                     blk = event.content_block
-                    if blk.type == "tool_use":
+                    # Always reset the tool-input buffer on any new content block
+                    # so streamed bytes from a prior block can't leak into the next.
+                    current_tool_input_buf = ""
+                    current_tool_id = None
+                    current_tool_name = None
+                    if getattr(blk, "type", None) == "tool_use":
                         current_tool_id = blk.id
                         current_tool_name = blk.name
-                        current_tool_input_buf = ""
                         yield StreamEvent(
                             type="tool_input_start",
                             tool_id=current_tool_id,
@@ -173,8 +177,9 @@ class AnthropicProvider(BaseProvider):
                     elif dtype == "text_delta":
                         yield StreamEvent(type="text_delta", delta=delta.text)
                     elif dtype == "input_json_delta":
-                        current_tool_input_buf += delta.partial_json
+                        # Only accumulate while we're inside an active tool_use block.
                         if current_tool_id:
+                            current_tool_input_buf += delta.partial_json
                             yield StreamEvent(
                                 type="tool_input_delta",
                                 tool_id=current_tool_id,
@@ -183,10 +188,20 @@ class AnthropicProvider(BaseProvider):
 
                 elif etype == "content_block_stop":
                     if current_tool_id:
-                        try:
-                            tool_input = json.loads(current_tool_input_buf) if current_tool_input_buf else {}
-                        except json.JSONDecodeError:
-                            tool_input = {"_raw": current_tool_input_buf}
+                        # Prefer the authoritative parsed input from the SDK when available;
+                        # fall back to our streamed buffer otherwise.
+                        tool_input: Any = None
+                        blk = getattr(event, "content_block", None)
+                        if blk is not None and getattr(blk, "type", None) == "tool_use":
+                            tool_input = getattr(blk, "input", None)
+                        if tool_input is None:
+                            try:
+                                tool_input = (
+                                    json.loads(current_tool_input_buf)
+                                    if current_tool_input_buf else {}
+                                )
+                            except json.JSONDecodeError:
+                                tool_input = {"_raw": current_tool_input_buf}
                         yield StreamEvent(
                             type="tool_call",
                             tool_id=current_tool_id,
@@ -195,6 +210,7 @@ class AnthropicProvider(BaseProvider):
                         )
                         current_tool_id = None
                         current_tool_name = None
+                        current_tool_input_buf = ""
 
             # Final usage from the complete message
             try:

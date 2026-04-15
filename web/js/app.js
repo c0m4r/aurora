@@ -1023,8 +1023,25 @@ async function sendMessage(text, images, videos) {
             : '';
           const inputStr = JSON.stringify(input, null, 2);
 
-          // Reuse the block created by tool_input_start if present; otherwise create one.
+          // Reuse the block created by tool_input_start if present; otherwise
+          // adopt the most recent still-streaming block with the same tool name
+          // (covers provider edge cases where the streaming id differs from the
+          // final tool_use id). Fall back to creating a fresh block.
           let entry = toolBlocks[event.id];
+          if (!entry) {
+            for (const [existingId, e] of Object.entries(toolBlocks)) {
+              if (
+                e.toolName === event.name &&
+                !e.finalized &&
+                e.previewEl && e.previewEl.classList.contains('tool-preview-streaming')
+              ) {
+                entry = e;
+                delete toolBlocks[existingId];
+                toolBlocks[event.id] = e;
+                break;
+              }
+            }
+          }
           if (!entry) {
             const tb = document.createElement('div');
             tb.className = 'tool-block open';
@@ -1065,6 +1082,7 @@ async function sendMessage(text, images, videos) {
           const label = entry.block.querySelector('.tool-section-label');
           if (label && label.textContent === 'Input (streaming)') label.textContent = 'Input';
           entry.toolName = event.name;
+          entry.finalized = true;
           scrollToBottom();
         }
 
