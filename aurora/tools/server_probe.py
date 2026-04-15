@@ -193,28 +193,29 @@ class ServerProbeTool(BaseTool):
 
         start_time = time.time()
         try:
-            # Attempt SSH connection with timeout
-            async with asyncssh.connect(**connect_kw) as conn:
-                elapsed = time.time() - start_time
-                parts.append(f"\n[SUCCESS] SSH connection established in {elapsed:.3f}s")
+            # Attempt SSH connection with 10s timeout
+            async with asyncio.timeout(10):
+                async with asyncssh.connect(**connect_kw) as conn:
+                    elapsed = time.time() - start_time
+                    parts.append(f"\n[SUCCESS] SSH connection established in {elapsed:.3f}s")
 
-                # Get server version info if available
-                server_version = conn.get_extra_info('server_version', None)
-                if server_version:
-                    parts.append(f"Server version: {server_version}")
+                    # Get server version info if available
+                    server_version = conn.get_extra_info('server_version', None)
+                    if server_version:
+                        parts.append(f"Server version: {server_version}")
 
-                # Try to run a simple command to verify shell access
-                result = await asyncio.wait_for(
-                    conn.run("echo 'SSH_PROBE_OK'", check=False),
-                    timeout=5.0,
-                )
+                    # Try to run a simple command to verify shell access
+                    result = await asyncio.wait_for(
+                        conn.run("echo 'SSH_PROBE_OK'", check=False),
+                        timeout=5.0,
+                    )
 
-                if result.stdout.strip() == "SSH_PROBE_OK":
-                    parts.append("[SUCCESS] Shell access verified - can execute commands")
-                else:
-                    parts.append("[WARNING] Shell access test returned unexpected output")
+                    if result.stdout.strip() == "SSH_PROBE_OK":
+                        parts.append("[SUCCESS] Shell access verified - can execute commands")
+                    else:
+                        parts.append("[WARNING] Shell access test returned unexpected output")
 
-                parts.append(f"Exit status: {result.exit_status}")
+                    parts.append(f"Exit status: {result.exit_status}")
 
         except asyncssh.PermissionDenied as exc:
             elapsed = time.time() - start_time
