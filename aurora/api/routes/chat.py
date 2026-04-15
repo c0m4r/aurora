@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...agent.learner import run_extract
-from ...agent.loop import AgentLoop
+from ...agent.loop import AgentLoop, submit_approval
 from ...api.auth import require_api_key
 from ...config import get as get_cfg
 from ...memory.store import get_store
@@ -42,6 +42,7 @@ class ChatRequest(BaseModel):
     thinking: bool = True
     learn: Optional[bool] = None  # None = use config default; True/False = override
     debug: bool = False
+    secure: bool = False  # if True, each tool call must be approved by the client
     # Optional: immediately save a solution after this turn
     save_solution: bool = False
     solution_problem: Optional[str] = None
@@ -142,7 +143,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
         pending_tools: dict[str, dict] = {}
 
         try:
-            async for event in loop.run(history, model_id, injected_solutions=solutions, thinking=req.thinking, debug=req.debug):
+            async for event in loop.run(history, model_id, injected_solutions=solutions, thinking=req.thinking, debug=req.debug, secure=req.secure):
                 etype = event.get("type")
                 if etype == "text":
                     assistant_text_parts.append(event["content"])
@@ -391,6 +392,18 @@ async def create_solution(body: dict, _auth: str = Depends(require_api_key)):
 async def delete_solution(sid: int, _auth: str = Depends(require_api_key)):
     await get_store().delete_solution(sid)
     return {"ok": True}
+
+
+class ToolApproval(BaseModel):
+    tool_id: str
+    approve: bool
+
+
+@router.post("/tool_approve")
+async def tool_approve(body: ToolApproval, _auth: str = Depends(require_api_key)):
+    """Resolve a pending secure-mode approval for a specific tool call."""
+    ok = submit_approval(body.tool_id, body.approve)
+    return {"ok": ok}
 
 
 @router.get("/health")

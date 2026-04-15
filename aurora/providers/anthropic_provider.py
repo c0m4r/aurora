@@ -159,6 +159,11 @@ class AnthropicProvider(BaseProvider):
                         current_tool_id = blk.id
                         current_tool_name = blk.name
                         current_tool_input_buf = ""
+                        yield StreamEvent(
+                            type="tool_input_start",
+                            tool_id=current_tool_id,
+                            tool_name=current_tool_name or "",
+                        )
 
                 elif etype == "content_block_delta":
                     delta = event.delta
@@ -169,6 +174,12 @@ class AnthropicProvider(BaseProvider):
                         yield StreamEvent(type="text_delta", delta=delta.text)
                     elif dtype == "input_json_delta":
                         current_tool_input_buf += delta.partial_json
+                        if current_tool_id:
+                            yield StreamEvent(
+                                type="tool_input_delta",
+                                tool_id=current_tool_id,
+                                delta=delta.partial_json,
+                            )
 
                 elif etype == "content_block_stop":
                     if current_tool_id:

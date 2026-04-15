@@ -55,7 +55,9 @@ class FileEditTool(BaseTool):
                     "edits": {
                         "type": "string",
                         "description": (
-                            "One or more SEARCH/REPLACE blocks.\n\n"
+                            "A SINGLE STRING containing one or more SEARCH/REPLACE blocks "
+                            "concatenated together (NOT a JSON array — multiple blocks go in "
+                            "the same string, separated by blank lines).\n\n"
                             "Format:\n"
                             "<<<<<<< SEARCH\n"
                             "exact existing text to match\n"
@@ -82,9 +84,17 @@ class FileEditTool(BaseTool):
             },
         )
 
-    async def execute(self, path: str, edits: str, **_) -> str:
+    async def execute(self, path: str, edits: Any, **_) -> str:
         if not path or not path.strip():
             return "Error: path must not be empty."
+
+        # Tolerate models that wrap edits in a list/dict despite the schema.
+        if isinstance(edits, list):
+            edits = "\n\n".join(
+                e if isinstance(e, str) else str(e) for e in edits
+            )
+        elif not isinstance(edits, str):
+            edits = str(edits)
 
         target = _resolve(path)
         if target is None:

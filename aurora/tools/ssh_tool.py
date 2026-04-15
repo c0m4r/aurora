@@ -227,7 +227,14 @@ class SSHTool(BaseTool):
             },
         )
 
-    async def execute(self, host: str, command: str, timeout: int = 60, **_) -> str:
+    async def execute(
+        self,
+        host: str,
+        command: str,
+        timeout: int = 60,
+        _progress_cb: Any = None,
+        **_,
+    ) -> str:
         host_cfg = self._hosts.get(host)
         if not host_cfg:
             return f"Unknown host '{host}'. Configured hosts: {list(self._hosts.keys())}"
@@ -263,29 +270,54 @@ class SSHTool(BaseTool):
         if host_cfg.get("password"):
             connect_kw["password"] = host_cfg["password"]
 
+        stdout_buf: list[str] = []
+        stderr_buf: list[str] = []
+
+        async def _pump(stream, buf: list[str], prefix: str = "") -> None:
+            async for line in stream:
+                buf.append(line)
+                if _progress_cb is not None:
+                    try:
+                        await _progress_cb(f"{prefix}{line}" if prefix else line)
+                    except Exception:
+                        pass
+
         try:
             async with asyncssh.connect(**connect_kw) as conn:
-                result = await asyncio.wait_for(
-                    conn.run(command, check=False, term_type="dumb"),
-                    timeout=float(timeout),
-                )
+                async with conn.create_process(command, term_type="dumb") as proc:
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(
+                                _pump(proc.stdout, stdout_buf),
+                                _pump(proc.stderr, stderr_buf, prefix="[stderr] "),
+                                proc.wait(),
+                            ),
+                            timeout=float(timeout),
+                        )
+                    except asyncio.TimeoutError:
+                        proc.terminate()
+                        return f"[TIMEOUT] Command exceeded {timeout}s on {host}"
+                    exit_status = proc.exit_status
         except asyncio.TimeoutError:
             return f"[TIMEOUT] Command exceeded {timeout}s on {host}"
         except Exception as exc:
             logger.warning("SSH connect failed on %s: %s", host, exc)
             return f"SSH error on {host}: {exc}"
 
+        stdout = "".join(stdout_buf)
+        stderr = "".join(stderr_buf)
+
         parts: list[str] = []
-        if result.stdout:
-            lines = result.stdout.splitlines()
+        if stdout:
+            lines = stdout.splitlines()
             if len(lines) > 600:
                 parts.append("\n".join(lines[:600]))
                 parts.append(f"\n[… {len(lines) - 600} more lines truncated]")
             else:
-                parts.append(result.stdout.rstrip())
-        if result.stderr:
-            parts.append(f"\n[stderr]\n{result.stderr[:2000].rstrip()}")
-        if result.exit_status not in (0, None):
-            parts.append(f"\n[exit status: {result.exit_status}]")
+                parts.append(stdout.rstrip())
+        if stderr:
+            parts.append(f"\n[stderr]\n{stderr[:2000].rstrip()}")
+        if exit_status not in (0, None):
+            parts.append(f"\n[exit status: {exit_status}]")
 
         return "\n".join(parts) if parts else "(no output)"

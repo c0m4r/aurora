@@ -64,6 +64,8 @@ class StreamEvent:
     type: Literal[
         "thinking_delta",
         "text_delta",
+        "tool_input_start",
+        "tool_input_delta",
         "tool_call",
         "tool_result",
         "usage",

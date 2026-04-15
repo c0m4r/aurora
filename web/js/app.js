@@ -19,6 +19,7 @@ const state = {
   thinking:       localStorage.getItem('aurora_thinking') !== 'false',
   learn:          localStorage.getItem('aurora_learn') === 'true',
   debug:          localStorage.getItem('aurora_debug') === 'true',
+  secure:         localStorage.getItem('aurora_secure') === 'true',
 };
 
 // ─── Marked + highlight.js setup ─────────────────────────────────────────────
@@ -202,6 +203,26 @@ debugToggleEl.addEventListener('change', () => {
   localStorage.setItem('aurora_debug', state.debug);
 });
 
+// ─── Secure toggle ────────────────────────────────────────────────────────────
+const secureToggleEl = $('#secure-toggle');
+secureToggleEl.checked = state.secure;
+secureToggleEl.addEventListener('change', () => {
+  state.secure = secureToggleEl.checked;
+  localStorage.setItem('aurora_secure', state.secure);
+});
+
+async function approveToolCall(toolId, approve) {
+  try {
+    await fetch(API('/api/tool_approve'), {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ tool_id: toolId, approve }),
+    });
+  } catch (e) {
+    console.warn('Tool approval failed:', e);
+  }
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 async function loadModels() {
   try {
@@ -275,6 +296,7 @@ async function loadConversation(id, title) {
 
     state.conversationId = id;
     updateActiveConv();
+    updateConvIdDisplay();
 
     const messagesEl = $('#messages');
     messagesEl.innerHTML = '';
@@ -783,6 +805,7 @@ async function sendMessage(text, images, videos) {
         thinking: state.thinking,
         learn: state.learn || undefined,
         debug: state.debug || undefined,
+        secure: state.secure || undefined,
       }),
     });
 
@@ -824,6 +847,7 @@ async function sendMessage(text, images, videos) {
         if (t === 'conv_id') {
           state.conversationId = event.conversation_id;
           updateActiveConv();
+    updateConvIdDisplay();
           loadConversations();
         }
 
@@ -915,6 +939,62 @@ async function sendMessage(text, images, videos) {
           flushMarkdown();
         }
 
+        else if (t === 'tool_input_start') {
+          // Seal text/thinking so the tool block lands after them in stream-body
+          currentTextEl = null;
+          textBuf = '';
+          if (currentThinkingBlock) {
+            currentThinkingBlock.querySelector('.thinking-header').innerHTML =
+              `<span class="thinking-toggle">▶</span> 💭 Thinking (${thinkingBuf.length} chars)`;
+            currentThinkingBlock.classList.remove('open');
+            currentThinkingBlock = null;
+          }
+          // Create the tool block now so the user sees activity while the model
+          // streams the tool's JSON arguments (e.g. file content being written).
+          if (!toolBlocks[event.id]) {
+            const tb = document.createElement('div');
+            tb.className = 'tool-block open';
+            tb.innerHTML = `
+              <div class="tool-header" onclick="toggleBlock(this)">
+                <span class="tool-icon">⚙</span>
+                <span class="tool-name">${escHtml(event.name || '')}</span>
+                <span class="tool-preview tool-preview-streaming">preparing…</span>
+                <span class="tool-status running"><span class="spinner"></span></span>
+              </div>
+              <div class="tool-body">
+                <div class="tool-section">
+                  <div class="tool-section-label">Input (streaming)</div>
+                  <pre class="tool-input-stream"></pre>
+                </div>
+                <div class="tool-section tool-result-section" style="display:none">
+                  <div class="tool-section-label">Output</div>
+                  <pre class="tool-output"></pre>
+                </div>
+              </div>`;
+            streamBody.appendChild(tb);
+            toolBlocks[event.id] = {
+              block: tb,
+              statusEl: tb.querySelector('.tool-status'),
+              resultSection: tb.querySelector('.tool-result-section'),
+              outputEl: tb.querySelector('.tool-output'),
+              inputStreamEl: tb.querySelector('.tool-input-stream'),
+              previewEl: tb.querySelector('.tool-preview'),
+              toolName: event.name,
+              inputBuf: '',
+            };
+            scrollToBottom();
+          }
+        }
+
+        else if (t === 'tool_input_delta') {
+          const entry = toolBlocks[event.id];
+          if (entry) {
+            entry.inputBuf = (entry.inputBuf || '') + (event.delta || '');
+            if (entry.inputStreamEl) entry.inputStreamEl.textContent = entry.inputBuf;
+            scrollToBottom();
+          }
+        }
+
         else if (t === 'tool_call') {
           // Seal both text and thinking so tool appears in the right place
           currentTextEl = null;
@@ -938,39 +1018,105 @@ async function sendMessage(text, images, videos) {
           } else if (event.name === 'ssh' && input.command) {
             preview = input.command;
           }
-          const previewHtml = preview
-            ? `<span class="tool-preview">${escHtml(preview.length > 80 ? preview.slice(0, 80) + '…' : preview)}</span>`
+          const previewText = preview
+            ? (preview.length > 80 ? preview.slice(0, 80) + '…' : preview)
             : '';
-          // Create a tool block directly in stream-body (preserves order)
-          const tb = document.createElement('div');
-          tb.className = 'tool-block open';
           const inputStr = JSON.stringify(input, null, 2);
-          tb.innerHTML = `
-            <div class="tool-header" onclick="toggleBlock(this)">
-              <span class="tool-icon">⚙</span>
-              <span class="tool-name">${escHtml(event.name)}</span>
-              ${previewHtml}
-              <span class="tool-status running"><span class="spinner"></span></span>
-            </div>
-            <div class="tool-body">
-              <div class="tool-section">
-                <div class="tool-section-label">Input</div>
-                <pre>${escHtml(inputStr)}</pre>
+
+          // Reuse the block created by tool_input_start if present; otherwise create one.
+          let entry = toolBlocks[event.id];
+          if (!entry) {
+            const tb = document.createElement('div');
+            tb.className = 'tool-block open';
+            tb.innerHTML = `
+              <div class="tool-header" onclick="toggleBlock(this)">
+                <span class="tool-icon">⚙</span>
+                <span class="tool-name">${escHtml(event.name)}</span>
+                <span class="tool-preview"></span>
+                <span class="tool-status running"><span class="spinner"></span></span>
               </div>
-              <div class="tool-section tool-result-section" style="display:none">
-                <div class="tool-section-label">Output</div>
-                <pre class="tool-output"></pre>
-              </div>
-            </div>`;
-          streamBody.appendChild(tb);
-          toolBlocks[event.id] = {
-            block: tb,
-            statusEl: tb.querySelector('.tool-status'),
-            resultSection: tb.querySelector('.tool-result-section'),
-            outputEl: tb.querySelector('.tool-output'),
-            toolName: event.name,
-          };
+              <div class="tool-body">
+                <div class="tool-section">
+                  <div class="tool-section-label">Input</div>
+                  <pre class="tool-input-stream"></pre>
+                </div>
+                <div class="tool-section tool-result-section" style="display:none">
+                  <div class="tool-section-label">Output</div>
+                  <pre class="tool-output"></pre>
+                </div>
+              </div>`;
+            streamBody.appendChild(tb);
+            entry = toolBlocks[event.id] = {
+              block: tb,
+              statusEl: tb.querySelector('.tool-status'),
+              resultSection: tb.querySelector('.tool-result-section'),
+              outputEl: tb.querySelector('.tool-output'),
+              inputStreamEl: tb.querySelector('.tool-input-stream'),
+              previewEl: tb.querySelector('.tool-preview'),
+              toolName: event.name,
+            };
+          }
+          // Replace streaming raw JSON with the parsed/pretty version.
+          if (entry.inputStreamEl) entry.inputStreamEl.textContent = inputStr;
+          if (entry.previewEl) {
+            entry.previewEl.classList.remove('tool-preview-streaming');
+            entry.previewEl.textContent = previewText;
+          }
+          const label = entry.block.querySelector('.tool-section-label');
+          if (label && label.textContent === 'Input (streaming)') label.textContent = 'Input';
+          entry.toolName = event.name;
           scrollToBottom();
+        }
+
+        else if (t === 'tool_approval_required') {
+          const entry = toolBlocks[event.id];
+          if (entry && !entry.block.querySelector('.tool-approval')) {
+            const bar = document.createElement('div');
+            bar.className = 'tool-approval';
+            bar.innerHTML = `
+              <span class="tool-approval-msg">🔒 Approve this tool call?</span>
+              <button class="btn-approve">✓ Allow</button>
+              <button class="btn-decline">✗ Decline</button>`;
+            bar.querySelector('.btn-approve').addEventListener('click', () => {
+              bar.remove();
+              approveToolCall(event.id, true);
+            });
+            bar.querySelector('.btn-decline').addEventListener('click', () => {
+              bar.remove();
+              approveToolCall(event.id, false);
+            });
+            entry.block.querySelector('.tool-body').prepend(bar);
+            entry.block.classList.add('open');
+            entry.statusEl.className = 'tool-status awaiting';
+            entry.statusEl.innerHTML = '⏸ Awaiting approval';
+            scrollToBottom();
+          }
+        }
+
+        else if (t === 'tool_approval_resolved') {
+          const entry = toolBlocks[event.id];
+          if (entry) {
+            const bar = entry.block.querySelector('.tool-approval');
+            if (bar) bar.remove();
+            if (event.approved) {
+              entry.statusEl.className = 'tool-status running';
+              entry.statusEl.innerHTML = '<span class="spinner"></span>';
+            } else {
+              entry.statusEl.className = 'tool-status error';
+              entry.statusEl.innerHTML = '✗ Declined';
+            }
+          }
+        }
+
+        else if (t === 'tool_output_delta') {
+          const entry = toolBlocks[event.id];
+          if (entry) {
+            entry.resultSection.style.display = '';
+            entry.block.classList.add('open');
+            entry.outputBuf = (entry.outputBuf || '') + (event.delta || '');
+            if (entry.outputEl) entry.outputEl.textContent = entry.outputBuf;
+            scrollToBottom();
+          }
         }
 
         else if (t === 'tool_result') {
@@ -1495,6 +1641,35 @@ function setStreamingUI(streaming) {
   sendBtn.classList.toggle('btn-send-stop', streaming);
   mediaUploadBtn.disabled = streaming;
   if (!streaming) inputEl.focus();
+}
+
+// ─── Conversation ID display ─────────────────────────────────────────────────
+function updateConvIdDisplay() {
+  const el = $('#conv-id-display');
+  if (!el) return;
+  const cid = state.conversationId;
+  if (cid) {
+    const short = cid.length > 12 ? cid.slice(0, 8) + '…' : cid;
+    el.textContent = `# ${short}`;
+    el.title = `Conversation ID: ${cid} — click to copy`;
+    el.style.cursor = 'pointer';
+  } else {
+    el.textContent = '';
+    el.title = '';
+  }
+}
+
+const _convIdEl = $('#conv-id-display');
+if (_convIdEl) {
+  _convIdEl.addEventListener('click', () => {
+    if (state.conversationId) {
+      copyToClipboard(state.conversationId).then(() => {
+        const prev = _convIdEl.textContent;
+        _convIdEl.textContent = 'copied!';
+        setTimeout(() => updateConvIdDisplay(), 1200);
+      });
+    }
+  });
 }
 
 // ─── Token display ────────────────────────────────────────────────────────────

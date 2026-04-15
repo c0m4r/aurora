@@ -16,6 +16,21 @@ from ..tools.sandbox import set_session
 
 logger = logging.getLogger(__name__)
 
+# ─── Secure-mode tool-call approvals ────────────────────────────────────────
+# When secure mode is on, the agent loop pauses before each tool execution
+# until the client approves or declines via POST /api/tool_approve.
+_pending_approvals: dict[str, asyncio.Future] = {}
+_APPROVAL_TIMEOUT = 300.0  # seconds
+
+
+def submit_approval(tool_id: str, approve: bool) -> bool:
+    """Resolve a pending approval future. Returns True if a future was waiting."""
+    fut = _pending_approvals.get(tool_id)
+    if fut is None or fut.done():
+        return False
+    fut.set_result(approve)
+    return True
+
 # ─── System prompt loading ───────────────────────────────────────────────────
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -93,6 +108,7 @@ class AgentLoop:
         model_id: str,
         injected_solutions: list[dict] | None = None,
         debug: bool = False,
+        secure: bool = False,
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
         # Scope file tools to this conversation's session directory
@@ -186,6 +202,20 @@ class AgentLoop:
                         text_buf += event.delta
                         yield {"type": "text", "content": event.delta}
 
+                    elif event.type == "tool_input_start":
+                        yield {
+                            "type": "tool_input_start",
+                            "id": event.tool_id,
+                            "name": event.tool_name,
+                        }
+
+                    elif event.type == "tool_input_delta":
+                        yield {
+                            "type": "tool_input_delta",
+                            "id": event.tool_id,
+                            "delta": event.delta,
+                        }
+
                     elif event.type == "tool_call":
                         tc = {
                             "id": event.tool_id,
@@ -232,10 +262,70 @@ class AgentLoop:
 
             history.append(NormalizedMessage(role="assistant", blocks=assistant_blocks))
 
-            # Execute tools (concurrently)
-            results = await asyncio.gather(*[
-                self._exec_tool(tc) for tc in tool_calls_this_turn
-            ])
+            # Secure mode: ask the user to approve each tool call before running it.
+            approvals: dict[str, bool] = {}
+            if secure:
+                for tc in tool_calls_this_turn:
+                    fut: asyncio.Future = asyncio.get_running_loop().create_future()
+                    _pending_approvals[tc["id"]] = fut
+                    yield {
+                        "type": "tool_approval_required",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc["input"],
+                    }
+                    try:
+                        approved = await asyncio.wait_for(fut, timeout=_APPROVAL_TIMEOUT)
+                    except asyncio.TimeoutError:
+                        approved = False
+                    finally:
+                        _pending_approvals.pop(tc["id"], None)
+                    approvals[tc["id"]] = approved
+                    yield {
+                        "type": "tool_approval_resolved",
+                        "id": tc["id"],
+                        "approved": approved,
+                    }
+
+            # Execute tools (concurrently); declined ones get a synthetic error.
+            # Stream live progress chunks through a shared queue so the UI can
+            # see stdout/stderr from long-running tools in real time.
+            progress_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _run_or_decline(tc: dict) -> tuple[str, str, bool]:
+                if secure and not approvals.get(tc["id"], False):
+                    return (
+                        tc["id"],
+                        "User declined to run this tool. Adjust your approach or ask for clarification.",
+                        True,
+                    )
+
+                async def on_progress(chunk: str) -> None:
+                    await progress_queue.put((tc["id"], chunk))
+
+                return await self._exec_tool(tc, on_progress=on_progress)
+
+            exec_tasks = [
+                asyncio.create_task(_run_or_decline(tc))
+                for tc in tool_calls_this_turn
+            ]
+            gather_task = asyncio.gather(*exec_tasks)
+
+            # Drain progress chunks until all executions complete.
+            while not gather_task.done() or not progress_queue.empty():
+                try:
+                    tid, chunk = await asyncio.wait_for(
+                        progress_queue.get(), timeout=0.1
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                yield {
+                    "type": "tool_output_delta",
+                    "id": tid,
+                    "delta": chunk,
+                }
+
+            results = await gather_task
 
             # Stream results and build tool_result blocks for next turn
             result_blocks: list[ContentBlock] = []
@@ -263,10 +353,17 @@ class AgentLoop:
         yield {"type": "done"}
 
 
-    async def _exec_tool(self, tc: dict) -> tuple[str, str, bool]:
+    async def _exec_tool(
+        self,
+        tc: dict,
+        on_progress: Any = None,
+    ) -> tuple[str, str, bool]:
         try:
+            kwargs = dict(tc["input"])
+            if on_progress is not None:
+                kwargs["_progress_cb"] = on_progress
             result = await asyncio.wait_for(
-                self.tools.execute(tc["name"], **tc["input"]),
+                self.tools.execute(tc["name"], **kwargs),
                 timeout=self._tool_timeout,
             )
             return tc["id"], result, False

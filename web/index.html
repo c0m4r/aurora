@@ -37,6 +37,10 @@
           <input type="checkbox" id="debug-toggle" />
           <span>🐛 Debug</span>
         </label>
+        <label class="thinking-toggle-label" title="Require approval before each tool call is executed">
+          <input type="checkbox" id="secure-toggle" />
+          <span>🔒 Secure</span>
+        </label>
       </div>
 
       <nav id="conv-list" class="conv-list">
@@ -55,6 +59,7 @@
         <button id="sidebar-toggle" class="btn-icon mobile-only" title="Toggle sidebar">☰</button>
         <span id="chat-title">New Conversation</span>
         <div class="header-actions">
+          <span id="conv-id-display" class="conv-id-display" title="Conversation ID — click to copy"></span>
           <span id="token-display" class="token-count" title="Tokens used this session"></span>
           <button id="copy-all-btn" class="btn-icon" title="Copy entire conversation">⎘</button>
         </div>

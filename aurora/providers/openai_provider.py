@@ -280,7 +280,7 @@ class OpenAIProvider(BaseProvider):
                         for tc_delta in delta.tool_calls:
                             idx = tc_delta.index
                             if idx not in tc_buf:
-                                tc_buf[idx] = {"id": "", "name": "", "args": ""}
+                                tc_buf[idx] = {"id": "", "name": "", "args": "", "started": False}
                             if tc_delta.id:
                                 tc_buf[idx]["id"] = tc_delta.id
                             if tc_delta.function:
@@ -288,6 +288,28 @@ class OpenAIProvider(BaseProvider):
                                     tc_buf[idx]["name"] = tc_delta.function.name
                                 if tc_delta.function.arguments:
                                     tc_buf[idx]["args"] += tc_delta.function.arguments
+                            # Emit start event once we have id+name
+                            if (
+                                not tc_buf[idx]["started"]
+                                and tc_buf[idx]["id"]
+                                and tc_buf[idx]["name"]
+                            ):
+                                tc_buf[idx]["started"] = True
+                                yield StreamEvent(
+                                    type="tool_input_start",
+                                    tool_id=tc_buf[idx]["id"],
+                                    tool_name=tc_buf[idx]["name"],
+                                )
+                            if (
+                                tc_delta.function
+                                and tc_delta.function.arguments
+                                and tc_buf[idx]["id"]
+                            ):
+                                yield StreamEvent(
+                                    type="tool_input_delta",
+                                    tool_id=tc_buf[idx]["id"],
+                                    delta=tc_delta.function.arguments,
+                                )
 
                 if chunk.usage:
                     yield StreamEvent(
