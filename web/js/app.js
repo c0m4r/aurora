@@ -1795,6 +1795,169 @@ function insertSolution(problem) {
 }
 window.insertSolution = insertSolution;
 
+// ─── File viewer ──────────────────────────────────────────────────────────────
+const fileViewer = { path: '', selected: null };
+
+function humanFileSize(b) {
+  if (b == null) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0, n = b;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+}
+
+$('#files-btn').addEventListener('click', () => {
+  if (!state.conversationId) {
+    alert('Start or load a conversation first — files are scoped per session.');
+    return;
+  }
+  openFilesModal('');
+});
+
+async function openFilesModal(path) {
+  $('#files-modal').classList.remove('hidden');
+  $('#file-preview').classList.add('hidden');
+  $('#files-list').classList.remove('full-width');
+  await navigateFiles(path);
+}
+
+async function navigateFiles(path) {
+  const cid = state.conversationId;
+  if (!cid) return;
+  const listEl = $('#files-list');
+  listEl.innerHTML = '<p class="files-empty">Loading…</p>';
+  try {
+    const url = API(`/api/conversations/${cid}/files?path=${encodeURIComponent(path || '')}`);
+    const resp = await fetch(url, { headers: headers() });
+    if (!resp.ok) {
+      listEl.innerHTML = `<p class="files-empty">Error: ${escHtml(resp.statusText)}</p>`;
+      return;
+    }
+    const data = await resp.json();
+    fileViewer.path = data.path || '';
+    fileViewer.selected = null;
+    renderFilesBreadcrumb();
+    renderFilesList(data.entries || []);
+  } catch (e) {
+    listEl.innerHTML = `<p class="files-empty">Error: ${escHtml(e.message)}</p>`;
+  }
+}
+
+function renderFilesBreadcrumb() {
+  const bc = $('#files-breadcrumb');
+  const parts = fileViewer.path ? fileViewer.path.split('/').filter(Boolean) : [];
+  const segments = [`<span class="crumb" data-path="">files</span>`];
+  let acc = '';
+  for (const p of parts) {
+    acc = acc ? `${acc}/${p}` : p;
+    segments.push('<span class="sep">/</span>');
+    segments.push(`<span class="crumb" data-path="${escHtml(acc)}">${escHtml(p)}</span>`);
+  }
+  bc.innerHTML = segments.join('');
+  bc.querySelectorAll('.crumb').forEach(el => {
+    el.addEventListener('click', () => navigateFiles(el.dataset.path));
+  });
+}
+
+function renderFilesList(entries) {
+  const list = $('#files-list');
+  list.innerHTML = '';
+
+  if (fileViewer.path) {
+    const up = document.createElement('div');
+    up.className = 'file-entry';
+    up.innerHTML = '<span class="file-icon">↩</span><span class="file-name">..</span>';
+    up.addEventListener('click', () => {
+      const parent = fileViewer.path.split('/').slice(0, -1).join('/');
+      navigateFiles(parent);
+    });
+    list.appendChild(up);
+  }
+
+  if (!entries.length) {
+    const empty = document.createElement('p');
+    empty.className = 'files-empty';
+    empty.textContent = fileViewer.path
+      ? 'Empty directory.'
+      : 'No files yet in this conversation.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const e of entries) {
+    const el = document.createElement('div');
+    el.className = 'file-entry';
+    el.dataset.name = e.name;
+    el.innerHTML = `
+      <span class="file-icon">${e.type === 'dir' ? '📁' : '📄'}</span>
+      <span class="file-name">${escHtml(e.name)}</span>
+      <span class="file-size">${e.type === 'dir' ? '' : humanFileSize(e.size)}</span>`;
+    el.addEventListener('click', () => {
+      const newPath = fileViewer.path ? `${fileViewer.path}/${e.name}` : e.name;
+      if (e.type === 'dir') {
+        navigateFiles(newPath);
+      } else {
+        previewFile(newPath, e.name, el);
+      }
+    });
+    list.appendChild(el);
+  }
+}
+
+async function previewFile(path, name, rowEl) {
+  const cid = state.conversationId;
+  const previewEl = $('#file-preview');
+  previewEl.classList.remove('hidden');
+  $('#files-list').classList.remove('full-width');
+  previewEl.innerHTML = '<div class="file-preview-error" style="color:var(--text-muted)">Loading…</div>';
+
+  $$('#files-list .file-entry').forEach(el => el.classList.remove('active'));
+  if (rowEl) rowEl.classList.add('active');
+
+  try {
+    const url = API(`/api/conversations/${cid}/files/content?path=${encodeURIComponent(path)}`);
+    const resp = await fetch(url, { headers: headers() });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => resp.statusText);
+      previewEl.innerHTML = `<div class="file-preview-error">${escHtml(errText || resp.statusText)}</div>`;
+      return;
+    }
+    const data = await resp.json();
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const langGuess = ext && typeof hljs !== 'undefined' && hljs.getLanguage(ext) ? ext : '';
+    let highlighted;
+    try {
+      if (typeof hljs !== 'undefined') {
+        highlighted = langGuess
+          ? hljs.highlight(data.content, { language: langGuess, ignoreIllegals: true }).value
+          : hljs.highlightAuto(data.content).value;
+      }
+    } catch (_) {}
+    if (!highlighted) highlighted = escHtml(data.content);
+
+    previewEl.innerHTML = `
+      <div class="file-preview-header">
+        <span class="file-preview-name">📄 ${escHtml(name)}</span>
+        <span class="file-preview-size">${humanFileSize(data.size)}</span>
+        <button class="btn-icon" id="file-preview-copy" title="Copy content">⎘</button>
+        <button class="btn-icon" id="file-preview-close" title="Close preview">✕</button>
+      </div>
+      <pre><code class="hljs language-${langGuess || 'text'}">${highlighted}</code></pre>`;
+    $('#file-preview-close').addEventListener('click', () => {
+      previewEl.classList.add('hidden');
+      $$('#files-list .file-entry').forEach(el => el.classList.remove('active'));
+    });
+    $('#file-preview-copy').addEventListener('click', (ev) => {
+      copyToClipboard(data.content).then(() => {
+        ev.target.textContent = '✓';
+        setTimeout(() => { ev.target.textContent = '⎘'; }, 1200);
+      });
+    });
+  } catch (e) {
+    previewEl.innerHTML = `<div class="file-preview-error">${escHtml(e.message)}</div>`;
+  }
+}
+
 // ─── Sidebar toggle (mobile) ──────────────────────────────────────────────────
 $('#sidebar-toggle')?.addEventListener('click', () => {
   $('#sidebar').classList.toggle('open');

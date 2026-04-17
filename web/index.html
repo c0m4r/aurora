@@ -49,6 +49,7 @@
 
       <div class="sidebar-footer">
         <button id="theme-toggle" class="btn-text" title="Toggle dark/light mode">🌙 Dark</button>
+        <button id="files-btn" class="btn-text" title="Browse files in this conversation">📁 Files</button>
         <button id="solutions-btn" class="btn-text" title="Saved solutions">📚 Solutions</button>
       </div>
     </aside>
@@ -108,6 +109,21 @@
         <div class="input-hint">Enter to send · Shift+Enter for newline · Esc to stop · Paste or drop images/videos</div>
       </div>
     </main>
+  </div>
+
+  <!-- File viewer modal -->
+  <div id="files-modal" class="modal hidden">
+    <div class="modal-content files-modal-content">
+      <div class="modal-header">
+        <h2>Session Files</h2>
+        <button class="modal-close btn-icon">✕</button>
+      </div>
+      <div id="files-breadcrumb" class="files-breadcrumb"></div>
+      <div class="files-body">
+        <div id="files-list" class="files-list"></div>
+        <div id="file-preview" class="file-preview hidden"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Solutions modal -->

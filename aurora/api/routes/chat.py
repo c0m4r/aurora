@@ -354,6 +354,73 @@ async def delete_conversation(cid: str, _auth: str = Depends(require_api_key)):
     return {"ok": True}
 
 
+@router.get("/conversations/{cid}/files")
+async def list_session_files(
+    cid: str, path: str = "", _auth: str = Depends(require_api_key)
+):
+    """List a directory inside the conversation's session sandbox."""
+    from ...tools.sandbox import resolve as _resolve, sandbox as _sandbox
+    from fastapi import HTTPException
+
+    target = _resolve(path or ".", session_id=cid)
+    if target is None:
+        raise HTTPException(400, "Invalid path")
+
+    sb = _sandbox(session_id=cid)
+    if not target.exists():
+        return {"path": "", "type": "dir", "entries": []}
+    if not target.is_dir():
+        raise HTTPException(400, "Not a directory")
+
+    entries = []
+    try:
+        for e in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+            st = e.stat()
+            entries.append({
+                "name": e.name,
+                "type": "dir" if e.is_dir() else "file",
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+            })
+    except PermissionError:
+        raise HTTPException(403, "Permission denied")
+
+    rel = str(target.relative_to(sb.resolve()))
+    return {"path": "" if rel == "." else rel, "type": "dir", "entries": entries}
+
+
+@router.get("/conversations/{cid}/files/content")
+async def read_session_file(
+    cid: str, path: str, _auth: str = Depends(require_api_key)
+):
+    """Return the text content of a file inside the conversation's session sandbox."""
+    from ...tools.sandbox import resolve as _resolve
+    from fastapi import HTTPException
+
+    if not path:
+        raise HTTPException(400, "path required")
+
+    target = _resolve(path, session_id=cid)
+    if target is None:
+        raise HTTPException(400, "Invalid path")
+    if not target.exists():
+        raise HTTPException(404, "Not found")
+    if not target.is_file():
+        raise HTTPException(400, "Not a file")
+
+    size = target.stat().st_size
+    MAX_BYTES = 2_000_000
+    if size > MAX_BYTES:
+        raise HTTPException(413, f"File too large ({size} bytes; max {MAX_BYTES})")
+
+    try:
+        content = target.read_text(errors="replace")
+    except Exception as exc:
+        raise HTTPException(500, f"Error reading file: {exc}")
+
+    return {"path": path, "content": content, "size": size}
+
+
 @router.get("/models")
 async def list_models(_auth: str = Depends(require_api_key)):
     registry = get_registry()
