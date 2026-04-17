@@ -516,6 +516,23 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
 .tool-status.error { color: var(--red); }
 .tool-status.awaiting { color: var(--accent); }
 .tool-preview-streaming { font-style: italic; opacity: 0.7; }
+.generating-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 6px 0;
+  border: 1px dashed var(--tool-border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-style: italic;
+  animation: generating-pulse 1.4s ease-in-out infinite;
+}
+@keyframes generating-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
 .tool-approval {
   display: flex;
   gap: 8px;

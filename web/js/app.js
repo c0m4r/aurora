@@ -782,6 +782,32 @@ async function sendMessage(text, images, videos) {
     }
   }
 
+  // Idle "Generating next action…" indicator — surfaces the silent window
+  // between the last streamed delta and the arrival of a tool call. Needed
+  // mainly for Ollama, which emits tool calls as a single complete chunk
+  // after several seconds of server-side buffering. Providers that stream
+  // tool_input deltas continuously never let the timer fire.
+  const IDLE_INDICATOR_MS = 800;
+  let pendingIdleEl = null;
+  let pendingIdleTimer = null;
+  function hideGeneratingPlaceholder() {
+    if (pendingIdleTimer) { clearTimeout(pendingIdleTimer); pendingIdleTimer = null; }
+    if (pendingIdleEl) { pendingIdleEl.remove(); pendingIdleEl = null; }
+  }
+  function showGeneratingPlaceholder() {
+    pendingIdleTimer = null;
+    if (pendingIdleEl) return;
+    pendingIdleEl = document.createElement('div');
+    pendingIdleEl.className = 'generating-placeholder';
+    pendingIdleEl.innerHTML = '<span>🔧</span><span>Generating next action…</span>';
+    streamBody.appendChild(pendingIdleEl);
+    scrollToBottom();
+  }
+  function bumpIdleTimer() {
+    hideGeneratingPlaceholder();
+    pendingIdleTimer = setTimeout(showGeneratingPlaceholder, IDLE_INDICATOR_MS);
+  }
+
   let hitMaxIterations = false;
 
   try {
@@ -922,6 +948,7 @@ async function sendMessage(text, images, videos) {
           }
           thinkingBuf += event.content;
           currentThinkingBlock.querySelector('.thinking-body').textContent = thinkingBuf;
+          bumpIdleTimer();
           scrollToBottom();
         }
 
@@ -937,9 +964,11 @@ async function sendMessage(text, images, videos) {
           textBuf += event.content;
           if (event.content.includes('Max tool iterations reached')) hitMaxIterations = true;
           flushMarkdown();
+          bumpIdleTimer();
         }
 
         else if (t === 'tool_input_start') {
+          hideGeneratingPlaceholder();
           // Seal text/thinking so the tool block lands after them in stream-body
           currentTextEl = null;
           textBuf = '';
@@ -996,6 +1025,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'tool_call') {
+          hideGeneratingPlaceholder();
           // Seal both text and thinking so tool appears in the right place
           currentTextEl = null;
           textBuf = '';
@@ -1087,6 +1117,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'tool_approval_required') {
+          hideGeneratingPlaceholder();
           const entry = toolBlocks[event.id];
           if (entry && !entry.block.querySelector('.tool-approval')) {
             const bar = document.createElement('div');
@@ -1112,6 +1143,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'tool_approval_resolved') {
+          hideGeneratingPlaceholder();
           const entry = toolBlocks[event.id];
           if (entry) {
             const bar = entry.block.querySelector('.tool-approval');
@@ -1127,6 +1159,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'tool_output_delta') {
+          hideGeneratingPlaceholder();
           const entry = toolBlocks[event.id];
           if (entry) {
             entry.resultSection.style.display = '';
@@ -1138,6 +1171,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'tool_result') {
+          hideGeneratingPlaceholder();
           const entry = toolBlocks[event.id];
           if (entry) {
             entry.statusEl.className = 'tool-status ' + (event.error ? 'error' : 'success');
@@ -1207,6 +1241,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'done') {
+          hideGeneratingPlaceholder();
           // Remove cursor (it may be inside currentTextEl or detached)
           cursorEl.remove();
           // Close any open thinking block
@@ -1281,6 +1316,7 @@ async function sendMessage(text, images, videos) {
         }
 
         else if (t === 'error') {
+          hideGeneratingPlaceholder();
           cursorEl.remove();
           const errEl = document.createElement('div');
           errEl.style.cssText = 'color:var(--red);margin-top:8px';
@@ -1310,6 +1346,7 @@ async function sendMessage(text, images, videos) {
     }
     streamBody.appendChild(noteEl);
   } finally {
+    hideGeneratingPlaceholder();
     state.streaming = false;
     _abortController = null;
     setStreamingUI(false);
