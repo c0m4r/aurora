@@ -12,10 +12,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from .base import BaseTool, ToolDefinition
+from ._ssh_common import build_connect_kwargs, host_key_error_hint
 
 logger = logging.getLogger(__name__)
 
@@ -258,17 +258,7 @@ class SSHTool(BaseTool):
 
         timeout = min(int(timeout or 60), 300)
 
-        connect_kw: dict[str, Any] = {
-            "host":      host_cfg.get("host", host),
-            "port":      int(host_cfg.get("port", 22)),
-            "username":  host_cfg.get("user", "root"),
-            "known_hosts": None,  # accept any; tighten with known_hosts_file in production
-        }
-        key_file = host_cfg.get("key_file")
-        if key_file:
-            connect_kw["client_keys"] = [str(Path(key_file).expanduser())]
-        if host_cfg.get("password"):
-            connect_kw["password"] = host_cfg["password"]
+        connect_kw = build_connect_kwargs(host_cfg, host)
 
         stdout_buf: list[str] = []
         stderr_buf: list[str] = []
@@ -301,6 +291,9 @@ class SSHTool(BaseTool):
         except asyncio.TimeoutError:
             return f"[TIMEOUT] Command exceeded {timeout}s on {host}"
         except Exception as exc:
+            import asyncssh
+            if isinstance(exc, asyncssh.HostKeyNotVerifiable):
+                return "[BLOCKED — " + host_key_error_hint(host, exc) + "]"
             logger.warning("SSH connect failed on %s: %s", host, exc)
             return f"SSH error on {host}: {exc}"
 

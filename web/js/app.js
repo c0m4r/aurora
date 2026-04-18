@@ -46,18 +46,36 @@ renderer.code = function(token) {
     highlighted = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  const codeBlock = `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div>`;
+  const codeBlock = `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code><button class="code-copy-btn" data-action="copy-code">Copy</button></pre></div>`;
 
   if (isSvg) {
     const svgId = 'svg-preview-' + Math.random().toString(36).substring(2, 10);
-    const escapedText = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    return `<div class="svg-block"><div class="svg-preview-header"><span>SVG Preview</span><button class="svg-toggle-btn" onclick="toggleSvgPreview(this)">Hide</button></div><div class="svg-preview-container" id="${svgId}">${text}</div>${codeBlock}</div>`;
+    return `<div class="svg-block"><div class="svg-preview-header"><span>SVG Preview</span><button class="svg-toggle-btn" data-action="toggle-svg">Hide</button></div><div class="svg-preview-container" id="${svgId}">${text}</div>${codeBlock}</div>`;
   }
 
   return codeBlock;
 };
 
 marked.use({ renderer });
+
+// ─── Safe markdown renderer ───────────────────────────────────────────────────
+// All model-produced markdown flows through this helper. DOMPurify strips
+// <script>, inline event handlers, javascript: URIs, and other XSS primitives,
+// while preserving the SVG-preview element and data-action buttons our renderer
+// emits. Do NOT call marked.parse directly on untrusted content — use this.
+function safeMarkdown(text) {
+  const raw = marked.parse(text || '');
+  if (typeof DOMPurify === 'undefined') {
+    console.error('DOMPurify not loaded — refusing to render untrusted markdown');
+    return '';
+  }
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true, svg: true, svgFilters: true },
+    ADD_ATTR: ['data-action'],
+    FORBID_TAGS: ['form', 'input', 'textarea', 'select', 'button[type="submit"]'],
+    FORBID_ATTR: ['formaction', 'action'],
+  });
+}
 
 // ─── SVG preview toggle ───────────────────────────────────────────────────────
 function toggleSvgPreview(btn) {
@@ -71,7 +89,21 @@ function toggleSvgPreview(btn) {
     btn.textContent = 'Show';
   }
 }
-window.toggleSvgPreview = toggleSvgPreview;
+
+// ─── Click delegation for CSP-safe event handlers ────────────────────────────
+// Buttons/headers emit data-action="…" instead of inline onclick. One global
+// listener dispatches to the right function so we can keep CSP script-src
+// strict (no 'unsafe-inline').
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-action]');
+  if (!el) return;
+  switch (el.dataset.action) {
+    case 'copy-code':     copyCode(el); break;
+    case 'toggle-svg':    toggleSvgPreview(el); break;
+    case 'copy-message':  copyMessage(el); break;
+    case 'toggle-block':  toggleBlock(el); break;
+  }
+});
 
 // ─── JSON syntax highlight via hljs ─────────────────────────────────────────
 function hljsSyntaxHighlight(jsonStr) {
@@ -105,7 +137,6 @@ function copyCode(btn) {
     setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
   });
 }
-window.copyCode = copyCode;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -368,7 +399,7 @@ function appendUserMessage(text, images, videos, timestamp) {
   const ts = timestamp || new Date().toISOString();
   const msgEl = document.createElement('div');
   msgEl.className = 'message user';
-  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${videosHtml}${escHtml(text)}</div>`;
+  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" data-action="copy-message" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${videosHtml}${escHtml(text)}</div>`;
   fmt_relative(msgEl.querySelector('.message-time'), ts);
   appendMessage(msgEl);
   return msgEl;
@@ -391,12 +422,12 @@ function appendAssistantMessage(text, thinkingText, timestamp, inputTok, outputT
       <div class="message-avatar">🪼</div>
       <span class="message-role">Aurora</span>
       <span class="message-time"></span>
-      <button class="message-copy" onclick="copyMessage(this)" title="Copy">⎘</button>
+      <button class="message-copy" data-action="copy-message" title="Copy">⎘</button>
     </div>
     <div class="message-body">
       ${thinkingText ? renderThinkingBlock(thinkingText) : ''}
       ${renderSavedToolBlocks(blocks)}
-      <div class="md-content">${marked.parse(text || '')}</div>
+      <div class="md-content">${safeMarkdown(text)}</div>
       ${usageBadge}
       ${timeBadge}
     </div>
@@ -434,7 +465,7 @@ function renderSavedToolBlocks(blocks) {
       ? `<div class="tool-section"><div class="tool-section-label">Output</div>${renderToolOutput(tc.name, res.output || '')}</div>`
       : '';
     return `<div class="tool-block">
-      <div class="tool-header" onclick="toggleBlock(this)">
+      <div class="tool-header" data-action="toggle-block">
         <span class="tool-icon">⚙</span>
         <span class="tool-name">${escHtml(tc.name)}</span>
         ${previewHtml}
@@ -482,7 +513,7 @@ function renderToolOutput(toolName, output) {
       return `<div class="file-preview">` +
         `<div class="file-preview-header">${escHtml(header)}</div>` +
         `<div class="code-block-wrapper"><pre><code class="hljs language-${lang || 'text'}">${highlighted}</code>` +
-        `<button class="code-copy-btn" onclick="copyCode(this)">Copy</button></pre></div></div>`;
+        `<button class="code-copy-btn" data-action="copy-code">Copy</button></pre></div></div>`;
     }
   }
 
@@ -605,7 +636,7 @@ function finishLearnBlock(lb, status, message) {
 
 function renderThinkingBlock(text) {
   return `<div class="thinking-block">
-    <div class="thinking-header" onclick="toggleBlock(this)">
+    <div class="thinking-header" data-action="toggle-block">
       <span class="thinking-toggle">▶</span>
       💭 Thinking
     </div>
@@ -617,7 +648,6 @@ function toggleBlock(header) {
   const block = header.closest('.thinking-block, .tool-block, .learn-block, .debug-block, .svg-block, .learn-block');
   if (block) block.classList.toggle('open');
 }
-window.toggleBlock = toggleBlock;
 
 function appendMessage(el) {
   const messages = $('#messages');
@@ -659,7 +689,6 @@ function copyMessage(btn) {
     setTimeout(() => { btn.textContent = '⎘'; }, 1200);
   });
 }
-window.copyMessage = copyMessage;
 
 // Copy entire conversation
 $('#copy-all-btn').addEventListener('click', () => {
@@ -741,7 +770,7 @@ async function sendMessage(text, images, videos) {
     const debugBlock = document.createElement('div');
     debugBlock.className = 'debug-block';
     debugBlock.innerHTML = `
-      <div class="debug-header" onclick="toggleBlock(this)">
+      <div class="debug-header" data-action="toggle-block">
         <span class="debug-icon">🐛</span>
         <span class="debug-label">Debug — Request Payload</span>
         <span class="debug-toggle">▶</span>
@@ -776,7 +805,7 @@ async function sendMessage(text, images, videos) {
 
   function flushMarkdown() {
     if (textBuf && currentTextEl) {
-      currentTextEl.innerHTML = marked.parse(textBuf);
+      currentTextEl.innerHTML = safeMarkdown(textBuf);
       currentTextEl.appendChild(cursorEl);
       scrollToBottom();
     }
@@ -919,7 +948,7 @@ async function sendMessage(text, images, videos) {
           const debugBlock = document.createElement('div');
           debugBlock.className = 'debug-block';
           debugBlock.innerHTML = `
-            <div class="debug-header" onclick="toggleBlock(this)">
+            <div class="debug-header" data-action="toggle-block">
               <span class="debug-icon">🐛</span>
               <span class="debug-label">Debug — Full Model Payload</span>
               <span class="debug-toggle">▶</span>
@@ -938,7 +967,7 @@ async function sendMessage(text, images, videos) {
             currentThinkingBlock = document.createElement('div');
             currentThinkingBlock.className = 'thinking-block open';
             currentThinkingBlock.innerHTML = `
-              <div class="thinking-header" onclick="toggleBlock(this)">
+              <div class="thinking-header" data-action="toggle-block">
                 <span class="thinking-toggle">▶</span>
                 💭 Thinking…
               </div>
@@ -984,7 +1013,7 @@ async function sendMessage(text, images, videos) {
             const tb = document.createElement('div');
             tb.className = 'tool-block open';
             tb.innerHTML = `
-              <div class="tool-header" onclick="toggleBlock(this)">
+              <div class="tool-header" data-action="toggle-block">
                 <span class="tool-icon">⚙</span>
                 <span class="tool-name">${escHtml(event.name || '')}</span>
                 <span class="tool-preview tool-preview-streaming">preparing…</span>
@@ -1076,7 +1105,7 @@ async function sendMessage(text, images, videos) {
             const tb = document.createElement('div');
             tb.className = 'tool-block open';
             tb.innerHTML = `
-              <div class="tool-header" onclick="toggleBlock(this)">
+              <div class="tool-header" data-action="toggle-block">
                 <span class="tool-icon">⚙</span>
                 <span class="tool-name">${escHtml(event.name)}</span>
                 <span class="tool-preview"></span>
@@ -1309,7 +1338,7 @@ async function sendMessage(text, images, videos) {
             copyBtn.className = 'message-copy';
             copyBtn.textContent = '⎘';
             copyBtn.title = 'Copy';
-            copyBtn.setAttribute('onclick', 'copyMessage(this)');
+            copyBtn.setAttribute('data-action', 'copy-message');
             header.appendChild(copyBtn);
           }
           break;
@@ -1336,7 +1365,7 @@ async function sendMessage(text, images, videos) {
     const noteEl = document.createElement('div');
     if (err.name === 'AbortError') {
       if (currentTextEl && textBuf) {
-        currentTextEl.innerHTML = marked.parse(textBuf);
+        currentTextEl.innerHTML = safeMarkdown(textBuf);
       }
       noteEl.style.cssText = 'color:var(--text-dim);font-size:12px;margin-top:6px';
       noteEl.textContent = '⏹ Stopped by user.';

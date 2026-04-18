@@ -8,7 +8,7 @@ I reviewed the server, auth, route handlers, tool execution layer, config loadin
 
 ## Findings
 
-### 1) Unauthenticated OpenAI-compatible API exposes the agent and its tools
+### 1) Unauthenticated OpenAI-compatible API exposes the agent and its tools ✅ [fixed]
 
 **Severity: Critical (9.8/10)**
 
@@ -34,7 +34,7 @@ There is no `require_api_key` reference anywhere in `compat.py`, and the handler
 
 ---
 
-### 2) SSH host-key verification is disabled
+### 2) SSH host-key verification is disabled ✅ [fixed]
 
 **Severity: High (8.6/10)**
 
@@ -76,7 +76,7 @@ That is a text filter around an arbitrary remote shell command, not a policy eng
 
 ---
 
-### 4) API key authentication fails open when the configured key is empty or placeholder
+### 4) API key authentication fails open when the configured key is empty or placeholder ✅ [fixed]
 
 **Severity: Medium (6.5/10)**
 

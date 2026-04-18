@@ -9,9 +9,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
 
 from .base import BaseTool, ToolDefinition
+from ._ssh_common import build_connect_kwargs, host_key_error_hint
 
 logger = logging.getLogger(__name__)
 
@@ -176,20 +176,7 @@ class ServerProbeTool(BaseTool):
             parts.append("[ERROR] asyncssh is not installed. Run: pip install asyncssh")
             return "\n".join(parts)
 
-        # Build connection parameters
-        connect_kw: dict[str, Any] = {
-            "host": target,
-            "port": port,
-            "username": username,
-            "known_hosts": None,  # Accept any host key (same as SSHTool)
-        }
-
-        key_file = host_cfg.get("key_file")
-        if key_file:
-            from pathlib import Path
-            connect_kw["client_keys"] = [str(Path(key_file).expanduser())]
-        if host_cfg.get("password"):
-            connect_kw["password"] = host_cfg["password"]
+        connect_kw = build_connect_kwargs(host_cfg, host_name)
 
         start_time = time.time()
         try:
@@ -216,6 +203,10 @@ class ServerProbeTool(BaseTool):
                         parts.append("[WARNING] Shell access test returned unexpected output")
 
                     parts.append(f"Exit status: {result.exit_status}")
+
+        except asyncssh.HostKeyNotVerifiable as exc:
+            parts.append("")
+            parts.append("[BLOCKED] " + host_key_error_hint(host_name, exc))
 
         except asyncssh.PermissionDenied as exc:
             elapsed = time.time() - start_time

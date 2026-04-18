@@ -7,11 +7,12 @@ import time
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...agent.loop import AgentLoop
+from ...api.auth import require_api_key
 from ...config import get as get_cfg
 from ...providers.base import NormalizedMessage
 from ...providers.registry import get_registry
@@ -55,7 +56,7 @@ def _oai_messages_to_normalized(messages: list[OAIMessage]) -> tuple[str, list[N
 
 
 @router.get("/models")
-async def oai_list_models():
+async def oai_list_models(_auth: str = Depends(require_api_key)):
     registry = get_registry()
     models = await registry.list_models()
     return {
@@ -73,7 +74,7 @@ async def oai_list_models():
 
 
 @router.post("/chat/completions")
-async def oai_chat_completions(req: OAIRequest):
+async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api_key)):
     cfg = get_cfg()
     registry = get_registry()
     tools_reg = build_registry(cfg)

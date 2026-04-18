@@ -5,10 +5,10 @@ import logging
 import re
 from urllib.parse import unquote, urlparse
 
-import httpx
 from bs4 import BeautifulSoup
 
 from .base import BaseTool, ToolDefinition
+from ._http_guards import UnsafeURLError, safe_httpx_client
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +146,8 @@ class WebSearchTool(BaseTool):
                     "url": {
                         "type": "string",
                         "description": (
-                            "Direct URL to fetch (must be on a whitelisted domain, "
-                            "unless `allow_any_url` is set to true). "
+                            "Direct URL to fetch. Must be on a whitelisted domain "
+                            "(the operator configures the whitelist in config.yaml). "
                             "Do NOT provide `query` when using this."
                         ),
                     },
@@ -166,13 +166,6 @@ class WebSearchTool(BaseTool):
                         "type": "boolean",
                         "description": "Extract full page text from top results (default true). Only for `query` mode.",
                     },
-                    "allow_any_url": {
-                        "type": "boolean",
-                        "description": (
-                            "If true, bypass the whitelist and fetch any URL. "
-                            "ONLY set this to true after the user has explicitly approved fetching the URL."
-                        ),
-                    },
                 },
             },
         )
@@ -183,11 +176,10 @@ class WebSearchTool(BaseTool):
         url: str | None = None,
         num_results: int | None = None,
         fetch_content: bool | None = None,
-        allow_any_url: bool = False,
         **_,
     ) -> str:
         if url:
-            return await self._fetch_url(url, allow_any=allow_any_url)
+            return await self._fetch_url(url)
         if query:
             return await self._search(
                 query,
@@ -198,15 +190,14 @@ class WebSearchTool(BaseTool):
 
     # ── Direct URL fetch ──────────────────────────────────────────────────────
 
-    async def _fetch_url(self, url: str, allow_any: bool = False) -> str:
-        if not self._is_whitelisted(url) and not allow_any:
+    async def _fetch_url(self, url: str) -> str:
+        if not self._is_whitelisted(url):
             host = urlparse(url).netloc
             return (
                 f"⚠️ Domain '{host}' is not on the whitelist.\n\n"
-                "To fetch this URL, the user must approve it first.\n"
-                f"**Do you want to fetch {url}?** Reply 'yes' or 'accept' to proceed, "
-                "or decline if you don't trust this source.\n\n"
-                "(If the user approves, you can retry with the `allow_any_url` parameter set to true.)"
+                "Direct fetching of non-whitelisted domains is disabled for safety. "
+                "Either add this domain to tools.websearch.whitelist in config.yaml, "
+                "or use the `query` parameter to search instead."
             )
         html = await self._get_html(url)
         if not html:
@@ -240,7 +231,7 @@ class WebSearchTool(BaseTool):
 
     async def _ddg(self, query: str, n: int) -> list[dict]:
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=_HEADERS) as c:
+            async with safe_httpx_client(timeout=15.0, headers=_HEADERS) as c:
                 resp = await c.post("https://html.duckduckgo.com/html/", data={"q": query, "kl": "us-en"})
                 resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "lxml")
@@ -264,7 +255,7 @@ class WebSearchTool(BaseTool):
 
     async def _bing(self, query: str, n: int) -> list[dict]:
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=_HEADERS) as c:
+            async with safe_httpx_client(timeout=15.0, headers=_HEADERS) as c:
                 resp = await c.get("https://www.bing.com/search", params={"q": query, "count": n})
                 resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "lxml")
@@ -292,10 +283,13 @@ class WebSearchTool(BaseTool):
 
     async def _get_html(self, url: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True, headers=_HEADERS) as c:
+            async with safe_httpx_client(timeout=12.0, headers=_HEADERS) as c:
                 resp = await c.get(url)
                 resp.raise_for_status()
                 return resp.text
+        except UnsafeURLError as exc:
+            logger.info("blocked unsafe URL %s: %s", url, exc)
+            return ""
         except Exception as exc:
             logger.debug("fetch failed for %s: %s", url, exc)
             return ""

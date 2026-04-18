@@ -4,10 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
 
 from .base import BaseTool, ToolDefinition
 from .sandbox import resolve as _resolve
+from ._ssh_common import build_connect_kwargs, host_key_error_hint
 
 logger = logging.getLogger(__name__)
 
@@ -90,18 +90,7 @@ class SCPUploadTool(BaseTool):
         except ImportError:
             return "asyncssh is not installed. Run: pip install asyncssh"
 
-        # Build connection params
-        connect_kw: dict[str, Any] = {
-            "host": host_cfg.get("host", host),
-            "port": int(host_cfg.get("port", 22)),
-            "username": host_cfg.get("user", "root"),
-            "known_hosts": None,
-        }
-        key_file = host_cfg.get("key_file")
-        if key_file:
-            connect_kw["client_keys"] = [str(Path(key_file).expanduser())]
-        if host_cfg.get("password"):
-            connect_kw["password"] = host_cfg["password"]
+        connect_kw = build_connect_kwargs(host_cfg, host)
 
         try:
             async with asyncssh.connect(**connect_kw) as conn:
@@ -125,6 +114,8 @@ class SCPUploadTool(BaseTool):
         except asyncio.TimeoutError:
             return f"[TIMEOUT] Upload to {host} exceeded the timeout."
         except Exception as exc:
+            if isinstance(exc, asyncssh.HostKeyNotVerifiable):
+                return "[BLOCKED — " + host_key_error_hint(host, exc) + "]"
             logger.warning("SCP upload failed to %s: %s", host, exc)
             return f"SCP error on {host}: {exc}"
 

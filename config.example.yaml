@@ -1,8 +1,20 @@
 server:
-  host: "0.0.0.0"
+  # Default to loopback. Only expose externally if you have set a real api_key
+  # AND you understand that every configured tool (ssh, file_write, etc.) can
+  # be driven by anyone who reaches this port.
+  host: "127.0.0.1"
   port: 8000
-  # API key for CLI/API access. Can also be set via AURORA_API_KEY env var.
+  # REQUIRED unless server.allow_unauthenticated: true (loopback only).
+  # Generate one with e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
   api_key: ""
+  # Set true ONLY for a single-user loopback deployment with no real api_key.
+  # The server refuses to start with a non-loopback host + allow_unauthenticated,
+  # unless allow_unauthenticated_public: true is also set (accepting full risk).
+  # allow_unauthenticated: false
+  # Cross-origin allowlist. Empty/omitted → no CORS middleware (same-origin only).
+  # cors_origins: ["https://aurora.example.com"]
+  # Enable the OpenAI-compatible /v1 router (off by default; requires api_key).
+  # enable_openai_compat: false
 
 # ─── Model Providers ────────────────────────────────────────────────────────
 # Configure at least one. Models are referenced as "provider/model-id".

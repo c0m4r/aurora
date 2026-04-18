@@ -5,14 +5,66 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).parent.parent.parent / "web"
+
+
+# ─── Security headers ────────────────────────────────────────────────────────
+#
+# CSP allows the pinned CDN sources used by web/index.html (highlight.js,
+# marked, DOMPurify). script-src has NO 'unsafe-inline' — all event handlers
+# use addEventListener / data-action delegation. Inline styles are still used
+# in a few places so style-src retains 'unsafe-inline' for now.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: blob:; "
+    "media-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "connect-src 'self' https://cdn.jsdelivr.net; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": _CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
+}
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        for name, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
+
+
+def _cors_origins(cfg) -> list[str]:
+    raw = getattr(getattr(cfg, "server", None), "cors_origins", None)
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    return [o for o in raw if isinstance(o, str) and o]
+
+
+def _compat_enabled(cfg) -> bool:
+    """/v1 OpenAI-compatible router is opt-in (off by default)."""
+    return bool(getattr(getattr(cfg, "server", None), "enable_openai_compat", False))
 
 
 @asynccontextmanager
@@ -40,6 +92,10 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    from ..config import get as get_cfg
+
+    cfg = get_cfg()
+
     app = FastAPI(
         title="Aurora",
         version="1.0.0",
@@ -47,20 +103,32 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    origins = _cors_origins(cfg)
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+        )
+
+    app.add_middleware(_SecurityHeadersMiddleware)
 
     # API routes
     from .routes.chat import router as chat_router
-    from .routes.compat import router as compat_router
 
     app.include_router(chat_router)
-    app.include_router(compat_router)
+
+    if _compat_enabled(cfg):
+        from .routes.compat import router as compat_router
+        app.include_router(compat_router)
+        logger.warning(
+            "OpenAI-compatible /v1 router is ENABLED. "
+            "Ensure server.api_key is set — /v1 endpoints require the same key as /api."
+        )
+    else:
+        logger.info("OpenAI-compatible /v1 router is disabled (server.enable_openai_compat=false).")
 
     # Serve web UI static assets
     if WEB_DIR.exists():
@@ -104,12 +172,16 @@ def run():
     )
 
     from ..config import load as load_cfg, get as get_cfg
+    from .auth import validate_auth_config
 
     load_cfg(args.config)
     cfg = get_cfg()
 
-    host = args.host or getattr(getattr(cfg, "server", None), "host", "0.0.0.0")
+    host = args.host or getattr(getattr(cfg, "server", None), "host", "127.0.0.1")
     port = args.port or int(getattr(getattr(cfg, "server", None), "port", 8000) or 8000)
+
+    # Fail closed on dangerous auth configurations before binding the port.
+    validate_auth_config(host)
 
     import uvicorn
 

@@ -8,9 +8,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-import httpx
-
 from .base import BaseTool, ToolDefinition
+from ._http_guards import UnsafeURLError, safe_httpx_client
 
 logger = logging.getLogger(__name__)
 
@@ -289,10 +288,13 @@ class RSSFeedTool(BaseTool):
 
     async def _get(self, url: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=_HEADERS) as c:
+            async with safe_httpx_client(timeout=15.0, headers=_HEADERS) as c:
                 resp = await c.get(url)
                 resp.raise_for_status()
                 return resp.text
+        except UnsafeURLError as exc:
+            logger.info("blocked unsafe RSS URL %s: %s", url, exc)
+            return ""
         except Exception as exc:
             logger.debug("RSS fetch failed for %s: %s", url, exc)
             return ""
