@@ -41,7 +41,7 @@ Severities use CVSS 3.1-style reasoning (attack vector, complexity, privileges r
 
 ## Critical Findings
 
-### C1 — Unauthenticated `/v1/chat/completions` grants full agent + tool access (CVSS 9.8, Critical)
+### C1 — Unauthenticated `/v1/chat/completions` grants full agent + tool access (CVSS 9.8, Critical) ✅ [fixed]
 
 **Location**: [aurora/api/routes/compat.py:57-77](aurora/api/routes/compat.py#L57-L77)
 
@@ -86,7 +86,7 @@ curl -s http://target:8000/v1/chat/completions -H 'Content-Type: application/jso
 
 ---
 
-### C2 — Empty / sentinel API key disables authentication globally (CVSS 9.4, Critical)
+### C2 — Empty / sentinel API key disables authentication globally (CVSS 9.4, Critical) ✅ [fixed]
 
 **Location**: [aurora/api/auth.py:13-17](aurora/api/auth.py#L13-L17)
 
@@ -109,7 +109,7 @@ If the API key is blank or still at an example sentinel, **the dependency return
 
 ---
 
-### C3 — Stored / reflected XSS in the web UI via unsanitized `marked.parse` and raw SVG interpolation (CVSS 9.0, Critical)
+### C3 — Stored / reflected XSS in the web UI via unsanitized `marked.parse` and raw SVG interpolation (CVSS 9.0, Critical) ✅ [fixed]
 
 **Locations**:
 - [web/js/app.js:26](web/js/app.js#L26) — `marked.setOptions({ breaks: true, gfm: true })` with no sanitizer hook
@@ -151,7 +151,7 @@ Or via an SVG fence:
 
 ---
 
-### C4 — SSH / SCP host-key verification disabled (CVSS 9.1, Critical)
+### C4 — SSH / SCP host-key verification disabled (CVSS 9.1, Critical) ✅ [fixed]
 
 **Locations**:
 - [aurora/tools/ssh_tool.py:265](aurora/tools/ssh_tool.py#L265) — `"known_hosts": None, # accept any; tighten with known_hosts_file in production`
@@ -177,7 +177,7 @@ The inline comment `# ... tighten with known_hosts_file in production` acknowled
 
 ## High-Severity Findings
 
-### H1 — CORS fully open with credentials (CVSS 8.8, High)
+### H1 — CORS fully open with credentials (CVSS 8.8, High) ✅ [fixed]
 
 **Location**: [aurora/api/app.py:50-56](aurora/api/app.py#L50-L56)
 
@@ -256,7 +256,7 @@ The negative lookahead `(?!.*\becho\b)` on a line *after* the match point is str
 
 ---
 
-### H3 — SSRF via `websearch_tool.allow_any_url` and `rss_tool.url` without IP-range guards (CVSS 7.6, High)
+### H3 — SSRF via `websearch_tool.allow_any_url` and `rss_tool.url` without IP-range guards (CVSS 7.6, High) ✅ [fixed]
 
 **Locations**:
 - [aurora/tools/websearch_tool.py:201-210](aurora/tools/websearch_tool.py#L201-L210) — `_fetch_url(url, allow_any=allow_any_url)` takes the flag *directly from the LLM's tool-call arguments*
@@ -282,7 +282,7 @@ The RSS tool has the same class of problem, and additionally parses XML via `xml
 
 ---
 
-### H4 — No Subresource Integrity or CSP on CDN-loaded scripts (CVSS 7.4, High)
+### H4 — No Subresource Integrity or CSP on CDN-loaded scripts (CVSS 7.4, High) ✅ [fixed]
 
 **Location**: [web/index.html:9-13](web/index.html#L9-L13)
 
@@ -307,7 +307,7 @@ The `marked` URL has *no version pin* — it follows the latest release forever,
 
 ## Medium-Severity Findings
 
-### M1 — Non-constant-time API key comparison enables timing side-channel (CVSS 5.3, Medium)
+### M1 — Non-constant-time API key comparison enables timing side-channel (CVSS 5.3, Medium) ✅ [fixed]
 
 **Location**: [aurora/api/auth.py:25](aurora/api/auth.py#L25)
 
@@ -323,6 +323,7 @@ Python string equality short-circuits on the first differing byte. Over a networ
 ---
 
 ### M2 — Global `_pending_approvals` dict lets any authenticated client approve any pending tool call (CVSS 6.5, Medium)
+<!-- remaining -->
 
 **Location**: [aurora/agent/loop.py:22-32](aurora/agent/loop.py#L22-L32)
 
@@ -346,6 +347,7 @@ In a single-user deployment this is a latent issue. In a multi-user deployment (
 ---
 
 ### M3 — Persistent prompt-injection via auto-learned "solutions" (CVSS 6.1, Medium)
+<!-- remaining -->
 
 **Locations**:
 - [aurora/agent/learner.py](aurora/agent/learner.py) — extracts a "solution" from the LLM's own output and writes it into the memory store
@@ -372,6 +374,7 @@ This is a persistent prompt-injection vector: the attacker's instructions become
 ---
 
 ### M4 — Cross-session file listing via `FileReadTool(all_sessions=True)` (CVSS 5.5, Medium)
+<!-- remaining -->
 
 **Location**: [aurora/tools/file_tool.py](aurora/tools/file_tool.py) (around the `all_sessions` branch)
 
@@ -384,6 +387,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 ---
 
 ### M5 — Stored XSS via unescaped `media_type` and attachment fields (CVSS 5.4, Medium)
+<!-- remaining -->
 
 **Location**: [web/js/app.js:~363-371](web/js/app.js#L363-L371) (image/video preview HTML construction)
 
@@ -398,6 +402,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 ## Low-Severity Findings
 
 ### L1 — `datetime.utcnow()` is deprecated and naive (CVSS 3.1, Low)
+<!-- remaining -->
 
 **Location**: [aurora/memory/store.py:~82](aurora/memory/store.py#L82)
 
@@ -406,6 +411,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 ---
 
 ### L2 — RSS/XML parsing via stdlib `xml.etree` rather than `defusedxml` (CVSS 3.7, Low)
+<!-- remaining -->
 
 **Location**: [aurora/tools/rss_tool.py](aurora/tools/rss_tool.py)
 
@@ -416,6 +422,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 ---
 
 ### L3 — Debug endpoint / debug-mode payload leaks full system prompt and conversation history (CVSS 3.5, Low)
+<!-- remaining -->
 
 **Location**: Agent loop's debug-mode handling (sent when the UI toggles `debug=true`)
 
@@ -428,6 +435,7 @@ When debug mode is on, the full outgoing provider payload — including the syst
 ---
 
 ### L4 — SSH passwords stored plaintext in `config.yaml` (CVSS 3.0, Low)
+<!-- remaining -->
 
 **Location**: [ssh_tool.py:270-271](aurora/tools/ssh_tool.py#L270-L271), paired with the config file
 

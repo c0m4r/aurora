@@ -24,7 +24,7 @@ Aurora is a general-purpose AI assistant with Linux server administration capabi
 
 ## Critical Severity Issues
 
-### AUR-001: Missing Authentication on OpenAI-Compatible Endpoints
+### AUR-001: Missing Authentication on OpenAI-Compatible Endpoints ✅ [fixed]
 
 **Severity:** Critical  
 **CVSS Score:** 9.1 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N)  
@@ -95,7 +95,7 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 
 ## High Severity Issues
 
-### AUR-002: Overly Permissive CORS Configuration
+### AUR-002: Overly Permissive CORS Configuration ✅ [fixed]
 
 **Severity:** High  
 **CVSS Score:** 7.5 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)  
@@ -153,7 +153,7 @@ app.add_middleware(
 
 ---
 
-### AUR-003: SSH Host Key Verification Disabled
+### AUR-003: SSH Host Key Verification Disabled ✅ [fixed]
 
 **Severity:** High  
 **CVSS Score:** 7.4 (CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)  
@@ -213,6 +213,7 @@ tools:
 ---
 
 ### AUR-004: Path Traversal Vulnerability in File Operations
+<!-- remaining (symlink/Unicode edge cases) -->
 
 **Severity:** High  
 **CVSS Score:** 7.5 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)  
@@ -305,7 +306,7 @@ def _resolve(rel_path: str) -> Path | None:
 
 ## Medium Severity Issues
 
-### AUR-005: Timing-Safe API Key Comparison Missing
+### AUR-005: Timing-Safe API Key Comparison Missing ✅ [fixed]
 
 **Severity:** Medium  
 **CVSS Score:** 5.9 (CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N)  
@@ -336,6 +337,7 @@ if not hmac.compare_digest(provided, expected):
 ---
 
 ### AUR-006: No Rate Limiting
+<!-- remaining -->
 
 **Severity:** Medium  
 **CVSS Score:** 5.3 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L)  
@@ -371,7 +373,7 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
 
 ---
 
-### AUR-007: Server-Side Request Forgery (SSRF) in RSS Tool
+### AUR-007: Server-Side Request Forgery (SSRF) in RSS Tool ✅ [fixed]
 
 **Severity:** Medium  
 **CVSS Score:** 6.5 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)  
@@ -444,6 +446,7 @@ def _is_safe_url(url: str) -> bool:
 ---
 
 ### AUR-008: Inconsistent Environment Variable Name
+<!-- remaining -->
 
 **Severity:** Medium  
 **CVSS Score:** 4.3 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N)  
@@ -486,7 +489,7 @@ _ENV_MAP: dict[str, list[str]] = {
 
 ## Low Severity Issues
 
-### AUR-009: Weak API Key Validation
+### AUR-009: Weak API Key Validation ✅ [fixed]
 
 **Severity:** Low  
 **CVSS Score:** 3.7 (CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N)  
@@ -533,6 +536,7 @@ if any(re.match(p, expected, re.I) for p in WEAK_KEY_PATTERNS):
 ---
 
 ### AUR-010: Missing Input Validation on Conversation IDs
+<!-- remaining -->
 
 **Severity:** Low  
 **CVSS Score:** 3.1 (CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N)  
@@ -569,7 +573,7 @@ async def get_conversation(cid: str, _auth: str = Depends(require_api_key)):
 
 ---
 
-### AUR-011: Potential XSS via Solution Content
+### AUR-011: Potential XSS via Solution Content ✅ [fixed]
 
 **Severity:** Low  
 **CVSS Score:** 3.1 (CVSS:3.1/AV:N/AC:H/PR:L/UI:R/S:C/C:L/I:N/A:N)  
@@ -616,6 +620,7 @@ function createSolutionElement(s) {
 ---
 
 ### AUR-012: Information Disclosure via Error Messages
+<!-- remaining -->
 
 **Severity:** Low  
 **CVSS Score:** 2.7 (CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)  
@@ -650,7 +655,7 @@ except Exception as exc:
 
 ---
 
-### AUR-013: Insecure Dependency Installation
+### AUR-013: Insecure Dependency Installation ☑️ [false positive]
 
 **Severity:** Low  
 **CVSS Score:** 2.0 (CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:N/I:L/A:N)  

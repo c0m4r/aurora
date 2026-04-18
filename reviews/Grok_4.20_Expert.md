@@ -41,7 +41,7 @@ Findings are scored by **CVSS-like severity** (Critical/High/Medium/Low) with im
 
 ### Critical Issues (Must Fix Before Production)
 
-**1. Authentication is Effectively Disabled by Default (Severity: Critical)**  
+**1. Authentication is Effectively Disabled by Default (Severity: Critical)** ✅ [fixed]  
 **Location**: `aurora/api/auth.py:12-22`  
 **Code Snippet**:
 ```python
@@ -56,7 +56,7 @@ if provided != expected:
 **Impact**: Full remote code execution / server takeover via SSH tool if exposed publicly.  
 **Recommendation**: Make API key **mandatory**. Remove placeholder bypass. Add `if not expected: raise RuntimeError("API key required")`. Document strong random key generation in `install.sh`.
 
-**2. CORS Wildcard (`allow_origins=["*"]`) + No CSRF Protection (Severity: Critical)**  
+**2. CORS Wildcard (`allow_origins=["*"]`) + No CSRF Protection (Severity: Critical)** ✅ [fixed]  
 **Location**: `aurora/api/app.py:28-33`  
 **Code**:
 ```python
@@ -68,7 +68,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 ### High Issues
 
-**3. SSH Command Filtering Relies on Regex → Bypassable (Severity: High)**  
+**3. SSH Command Filtering Relies on Regex → Bypassable (Severity: High)**
+<!-- remaining -->  
 **Location**: `aurora/tools/ssh_tool.py` (full safety checks + `_is_safe_readonly` / `_is_safe_write`)  
 **Code Excerpt** (partial – execute uses `asyncssh`):
 ```python
@@ -87,7 +88,8 @@ _WRITE_COMMANDS = re.compile(r'... > >> | rm | mv | apt install | systemctl star
 - Log **every** executed command + result.
 - Per-host `allow_writes: false` default is good – keep it.
 
-**4. No Rate Limiting / Resource Protection**  
+**4. No Rate Limiting / Resource Protection**
+<!-- remaining -->  
 **Location**: Entire FastAPI app (`app.py`, AgentLoop).  
 **Issue**: No middleware for rate limits, request size, or tool timeout enforcement beyond per-tool 60s. LLM tool loops (`max_tool_iterations: 15`) can be abused.  
 **Impact**: DoS via infinite tool loops or expensive SSH/web calls.  
@@ -95,7 +97,8 @@ _WRITE_COMMANDS = re.compile(r'... > >> | rm | mv | apt install | systemctl star
 
 ### Medium Issues
 
-**5. File Sandbox is Solid but Path Resolution Edge Cases Exist**  
+**5. File Sandbox is Solid but Path Resolution Edge Cases Exist**
+<!-- partially remaining (symlink/TOCTOU edge cases) -->  
 **Location**: `aurora/tools/file_tool.py` (`_resolve`, `_sandbox`)  
 **Code**:
 ```python
@@ -107,13 +110,14 @@ resolved.relative_to(sandbox.resolve())  # raises ValueError on traversal
 **Issue**: `lstrip` + `resolve()` can still have symlink or race-condition edge cases if attacker controls filesystem. No quota on file size/number.  
 **Recommendation**: Add `os.chroot`-style hardening or use `pathlib` with stricter checks. Implement per-user quotas.
 
-**6. Web Fetch / Search Scraping Risks**  
+**6. Web Fetch / Search Scraping Risks** ✅ [fixed]  
 **Location**: `aurora/tools/websearch_tool.py` (httpx + trafilatura + DuckDuckGo/Bing scrape).  
 **Issue**: Direct URL fetch limited to whitelist (good). Search uses scraping (no API key needed – convenient but brittle). No sanitization of fetched content before injection into LLM context.  
 **Impact**: Potential prompt injection via malicious pages or SSRF if whitelist misconfigured.  
 **Recommendation**: Keep whitelist strict. Sanitize extracted content aggressively before LLM. Consider official APIs (with keys) as fallback.
 
-**7. Memory Store (SQLite) Exposure**  
+**7. Memory Store (SQLite) Exposure**
+<!-- remaining -->  
 **Location**: `aurora/memory/store.py` (FTS5 solutions + full conversation history).  
 **Issue**: DB at `~/.local/share/aurora/memory.db` (user-writable). No encryption. Solutions are searchable and injectable into prompts.  
 **Impact**: Sensitive data leakage if server compromised.  

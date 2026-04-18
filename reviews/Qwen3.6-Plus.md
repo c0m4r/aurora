@@ -29,6 +29,7 @@ Aurora is a general-purpose AI assistant with Linux server administration capabi
 ### 🚨 HIGH SEVERITY
 
 #### 1. SSH Command Injection via Regex Bypass (CVE-style)
+<!-- remaining -->
 **Location**: `aurora/tools/ssh_tool.py`  
 **CVSS Score**: 8.8 (High)  
 **Affected**: SSH tool in both read-only and write modes
@@ -86,7 +87,7 @@ def _is_safe_command(command: str, allow_writes: bool) -> tuple[bool, str]:
         return False, "malformed command syntax"
 ```
 
-#### 2. API Key Authentication Weaknesses
+#### 2. API Key Authentication Weaknesses ✅ [fixed]
 **Location**: `aurora/api/auth.py`  
 **CVSS Score**: 7.5 (High)  
 **Affected**: All API endpoints
@@ -127,7 +128,7 @@ def require_api_key(...):
     # ... rest of validation
 ```
 
-#### 3. OpenAI-Compatible Endpoint Missing Auth
+#### 3. OpenAI-Compatible Endpoint Missing Auth ✅ [fixed]
 **Location**: `aurora/api/routes/compat.py`  
 **CVSS Score**: 7.0 (High)
 
@@ -151,6 +152,7 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 ### ⚠️ MEDIUM SEVERITY
 
 #### 4. Path Traversal via Symlink Attack
+<!-- remaining -->
 **Location**: `aurora/tools/file_tool.py`  
 **CVSS Score**: 6.5 (Medium)
 
@@ -188,7 +190,7 @@ def _resolve(rel_path: str) -> Path | None:
     return Path(target)
 ```
 
-#### 5. SSRF via Web Fetch Whitelist Bypass
+#### 5. SSRF via Web Fetch Whitelist Bypass ✅ [fixed]
 **Location**: `aurora/tools/websearch_tool.py`  
 **CVSS Score**: 6.0 (Medium)
 
@@ -233,6 +235,7 @@ def _is_whitelisted(self, url: str) -> bool:
 ```
 
 #### 6. Missing Rate Limiting & DoS Protection
+<!-- remaining -->
 **Location**: `aurora/api/app.py`, all endpoints  
 **CVSS Score**: 5.5 (Medium)
 
@@ -259,7 +262,7 @@ async def chat_stream(...):
     ...
 ```
 
-#### 7. Insecure CORS Configuration
+#### 7. Insecure CORS Configuration ✅ [fixed]
 **Location**: `aurora/api/app.py`
 ```python
 app.add_middleware(
@@ -296,6 +299,7 @@ app.add_middleware(
 ### ℹ️ LOW SEVERITY / BEST PRACTICES
 
 #### 8. SQLite Database Without Encryption
+<!-- remaining -->
 **Location**: `aurora/memory/store.py` (implied)  
 **CVSS Score**: 3.7 (Low)
 
@@ -306,7 +310,7 @@ app.add_middleware(
 - Or implement field-level encryption for sensitive fields
 - Document data retention policies
 
-#### 9. SSH Host Key Verification Disabled
+#### 9. SSH Host Key Verification Disabled ✅ [fixed]
 **Location**: `aurora/tools/ssh_tool.py`
 ```python
 connect_kw: dict[str, Any] = {
@@ -328,6 +332,7 @@ connect_kw["known_hosts"] = [
 ```
 
 #### 10. No Input Length Limits on Chat Messages
+<!-- remaining -->
 **Location**: `aurora/api/routes/chat.py`  
 **CVSS Score**: 3.1 (Low)
 
@@ -343,7 +348,7 @@ class ChatRequest(BaseModel):
     # ... other fields
 ```
 
-#### 11. Missing Security Headers in SSE Responses
+#### 11. Missing Security Headers in SSE Responses ✅ [fixed]
 **Location**: `aurora/api/routes/chat.py`
 ```python
 return StreamingResponse(
@@ -369,6 +374,7 @@ async def add_security_headers(request, call_next):
 ```
 
 #### 12. Logging of Sensitive Data
+<!-- remaining -->
 **Location**: Multiple files  
 **CVSS Score**: 3.0 (Low)
 
