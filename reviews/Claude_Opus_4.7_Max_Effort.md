@@ -13,7 +13,7 @@
 
 Aurora is a broadly capable agentic assistant: it can run arbitrary SSH commands on configured remote hosts, read/write files under a per-session sandbox, fetch arbitrary URLs, persist memories and "solutions" into a shared SQLite store, and streams responses into a web UI that renders Markdown from the model *without sanitization*. The ambition is admirable. The current security posture is not yet commensurate with that ambition.
 
-The audit identified **four Critical**, **four High**, **six Medium**, and **five Low** findings. The most severe issues combine to produce a pre-auth remote code execution path on any deployment that exposes the default port to an attacker and has an SSH host configured:
+The audit identified **four Critical**, **four High**, **five Medium**, and **five Low** findings. The most severe issues combine to produce a pre-auth remote code execution path on any deployment that exposes the default port to an attacker and has an SSH host configured:
 
 1. The OpenAI-compatible `/v1/chat/completions` endpoint has **no authentication** ([aurora/api/routes/compat.py:75-77](aurora/api/routes/compat.py#L75-L77)).
 2. It constructs a full `AgentLoop` with the full tool registry, including `ssh` and the file tools.
@@ -30,7 +30,7 @@ A deployment matching the defaults is a remotely exploitable RCE primitive. A de
 |----------|-------|
 | Critical | 4 |
 | High     | 4 |
-| Medium   | 6 |
+| Medium   | 5 |
 | Low      | 5 |
 
 ### Scoring convention
@@ -395,25 +395,6 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 
 ---
 
-### M6 — `install.sh` uses a flag `pip` does not support (CVSS 4.3, Medium — availability/bug)
-
-**Location**: [install.sh:45](install.sh#L45)
-
-```bash
-pip install --uploaded-prior-to="$(date +%Y-%m-%d -d "7days ago")" -r requirements.lock
-```
-
-`pip` has no `--uploaded-prior-to` flag. This will fail at install time on every fresh setup, producing a cryptic error. The intent (filter out packages freshly uploaded in the last 7 days — a supply-chain-attack mitigation) is excellent; the implementation is broken.
-
-Compounding the issue: `requirements.lock` pins versions but includes **no hashes** — so there is no cryptographic protection against a compromised index delivering a tampered wheel for a pinned version.
-
-**Recommendation**:
-1. Replace the non-flag with `pip install --require-hashes -r requirements.lock`, and regenerate the lock with hashes via `pip-compile --generate-hashes` or `pip hash` output.
-2. If you want the "wait 7 days" heuristic, implement it as a pre-install Python script that queries PyPI's JSON metadata for each pin and aborts if any package's upload date is within the window. This is explicit and works.
-3. Document the expected install flow in `README.md`.
-
----
-
 ## Low-Severity Findings
 
 ### L1 — `datetime.utcnow()` is deprecated and naive (CVSS 3.1, Low)
@@ -494,25 +475,24 @@ I would ship these in the following order. The first bucket can be done in an af
 5. **C3**: Add DOMPurify on every `marked.parse` call. Remove raw-SVG interpolation. Add CSP header. Remove inline `onclick`.
 6. **C4**: Default to strict `known_hosts`; add per-host pinning config.
 7. **H4**: Pin `marked` version, add SRI hashes, ship CSP + security headers.
-8. **M6**: Fix `install.sh` pip flag and add `--require-hashes` with a regenerated hash-locked `requirements.lock`.
 
 ### Within the month
 
-9. **H2**: Restructure SSH tool: argv-based safe tools + explicit `unsafe_shell` path with user approval; deploy restricted shells / ForceCommand per host; stop running as `root`.
-10. **H3**: Server-side IP-range filtering for all HTTP fetches (websearch, RSS); remove `allow_any_url` from LLM-visible schema.
-11. **M2**: Per-conversation approval scoping; consider a user/identity layer.
-12. **M3**: Make Learner sanitize + require explicit "save" confirmation; never auto-save turns that touched external tools.
-13. **M4**: Remove `all_sessions` from LLM-visible surface.
-14. **M5**: Audit every `innerHTML`/template interpolation; enforce `escHtml`.
+8. **H2**: Restructure SSH tool: argv-based safe tools + explicit `unsafe_shell` path with user approval; deploy restricted shells / ForceCommand per host; stop running as `root`.
+9. **H3**: Server-side IP-range filtering for all HTTP fetches (websearch, RSS); remove `allow_any_url` from LLM-visible schema.
+10. **M2**: Per-conversation approval scoping; consider a user/identity layer.
+11. **M3**: Make Learner sanitize + require explicit "save" confirmation; never auto-save turns that touched external tools.
+12. **M4**: Remove `all_sessions` from LLM-visible surface.
+13. **M5**: Audit every `innerHTML`/template interpolation; enforce `escHtml`.
 
 ### Ongoing hygiene
 
-15. **L1/L2**: Migrate to `datetime.now(timezone.utc)` and `defusedxml`.
-16. **L3**: Gate debug mode behind admin auth.
-17. **L4**: Move SSH secrets out of plaintext YAML.
-18. **L5**: Verify `.gitignore`, rotate any keys for the real host once fixes land.
-19. Add a fuzz/property-test suite for the SSH blocklist (shell-escape-roulette style) so the patterns are actually exercised.
-20. Add an integration test that asserts `/v1/*` returns 401 without auth; this prevents C1 from regressing.
+14. **L1/L2**: Migrate to `datetime.now(timezone.utc)` and `defusedxml`.
+15. **L3**: Gate debug mode behind admin auth.
+16. **L4**: Move SSH secrets out of plaintext YAML.
+17. **L5**: Verify `.gitignore`, rotate any keys for the real host once fixes land.
+18. Add a fuzz/property-test suite for the SSH blocklist (shell-escape-roulette style) so the patterns are actually exercised.
+19. Add an integration test that asserts `/v1/*` returns 401 without auth; this prevents C1 from regressing.
 
 ---
 
