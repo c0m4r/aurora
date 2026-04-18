@@ -2,9 +2,9 @@
 
 > You're expert security researcher, a prodigy, genius programmer, your goal is to perform a professional, detailed, insightful security audit of this codebase with proper severity scoring, code examples and recommendations. My goal is to create useful and safe tool for people around the world to use. I want my software to be safe and trustworthy. Once you're done, we will publish the result of this audit immediately. Write it to reviews/Claude_Opus_4.7_Max_Effort.md
 
-**Auditor**: Claude Opus 4.7 (`claude-opus-4-7`), operating in adversarial review mode
-**Target**: Aurora 0.8.0 (`pyproject.toml:7`), commit `ddf4212` on `main`
-**Scope**: Full repository — FastAPI server, agent loop, tool layer, providers, memory store, web UI, installer, configuration
+**Auditor**: Claude Opus 4.7 (`claude-opus-4-7`), operating in adversarial review mode   
+**Target**: Aurora 0.8.0 (`pyproject.toml:7`), commit `ddf4212` on `main`   
+**Scope**: Full repository — FastAPI server, agent loop, tool layer, providers, memory store, web UI, installer, configuration   
 **Methodology**: Static review; threat modeling as a remote, unauthenticated attacker, then as an authenticated-but-untrusted user, then as a malicious LLM output (prompt-injection surface)
 
 ---
