@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -51,6 +53,61 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for name, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
         return response
+
+
+class _RateLimitMiddleware(BaseHTTPMiddleware):
+    """Sliding-window rate limiter keyed by client IP.
+
+    Chat/completions endpoints: 20 req/min (expensive LLM calls).
+    Other API endpoints:         60 req/min.
+    Static/web routes: unlimited.
+    """
+
+    _CHAT_LIMIT = 20
+    _API_LIMIT = 60
+    _WINDOW = 60  # seconds
+
+    def __init__(self, app) -> None:
+        super().__init__(app)
+        # {bucket_key: deque of monotonic timestamps}
+        self._windows: dict[str, deque] = defaultdict(deque)
+
+    def _client_ip(self, request: Request) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
+
+    def _check(self, key: str, limit: int) -> bool:
+        """Slide the window and return True if the request is within the limit."""
+        now = time.monotonic()
+        cutoff = now - self._WINDOW
+        dq = self._windows[key]
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not (path.startswith("/api/") or path.startswith("/v1/")):
+            return await call_next(request)
+
+        ip = self._client_ip(request)
+        if path in ("/api/chat/stream", "/v1/chat/completions"):
+            allowed = self._check(f"chat:{ip}", self._CHAT_LIMIT)
+        else:
+            allowed = self._check(f"api:{ip}", self._API_LIMIT)
+
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Please slow down."},
+                headers={"Retry-After": str(self._WINDOW)},
+            )
+        return await call_next(request)
 
 
 def _cors_origins(cfg) -> list[str]:
@@ -114,6 +171,7 @@ def create_app() -> FastAPI:
         )
 
     app.add_middleware(_SecurityHeadersMiddleware)
+    app.add_middleware(_RateLimitMiddleware)
 
     # API routes
     from .routes.chat import router as chat_router

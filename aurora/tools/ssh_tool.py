@@ -62,6 +62,15 @@ _EVASION_PATTERNS = re.compile(
     # find -exec / xargs piped into a shell (find -exec sh -c ...; xargs bash)
     | \bfind\b.*-exec\s+(?:ba|da|z)?sh\b
     | \bxargs\b.*\b(?:ba|da|z)?sh\b
+
+    # Backtick command execution  `cmd`
+    | `[^`]+`
+
+    # Pipe to absolute-path shell: | /bin/bash, | /usr/bin/sh, etc.
+    | \|\s*/(?:usr/)?(?:local/)?bin/(?:ba|da|z|tc|k|c)?sh\b
+
+    # env used to invoke a shell: env bash, env VAR=val sh, etc.
+    | \benv\s+(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(?:ba|da|z|tc|k|c)?sh\b
     """,
     re.VERBOSE | re.IGNORECASE,
 )

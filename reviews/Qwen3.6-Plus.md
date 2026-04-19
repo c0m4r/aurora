@@ -28,8 +28,7 @@ Aurora is a general-purpose AI assistant with Linux server administration capabi
 
 ### 🚨 HIGH SEVERITY
 
-#### 1. SSH Command Injection via Regex Bypass (CVE-style)
-<!-- remaining -->
+#### 1. SSH Command Injection via Regex Bypass (CVE-style) ✅ [fixed]
 **Location**: `aurora/tools/ssh_tool.py`  
 **CVSS Score**: 8.8 (High)  
 **Affected**: SSH tool in both read-only and write modes
@@ -152,8 +151,7 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 ### ⚠️ MEDIUM SEVERITY
 
 #### 4. Path Traversal via Symlink Attack
-<!-- remaining -->
-**Location**: `aurora/tools/file_tool.py`  
+**Location**: `aurora/tools/file_tool.py` <!-- remaining -->  
 **CVSS Score**: 6.5 (Medium)
 
 ```python
@@ -234,8 +232,7 @@ def _is_whitelisted(self, url: str) -> bool:
         return False
 ```
 
-#### 6. Missing Rate Limiting & DoS Protection
-<!-- remaining -->
+#### 6. Missing Rate Limiting & DoS Protection ✅ [fixed]
 **Location**: `aurora/api/app.py`, all endpoints  
 **CVSS Score**: 5.5 (Medium)
 
@@ -299,8 +296,7 @@ app.add_middleware(
 ### ℹ️ LOW SEVERITY / BEST PRACTICES
 
 #### 8. SQLite Database Without Encryption
-<!-- remaining -->
-**Location**: `aurora/memory/store.py` (implied)  
+**Location**: `aurora/memory/store.py` (implied) <!-- remaining -->  
 **CVSS Score**: 3.7 (Low)
 
 **Issue**: Conversation history, saved solutions, and potentially sensitive data stored in plaintext SQLite.
@@ -332,8 +328,7 @@ connect_kw["known_hosts"] = [
 ```
 
 #### 10. No Input Length Limits on Chat Messages
-<!-- remaining -->
-**Location**: `aurora/api/routes/chat.py`  
+**Location**: `aurora/api/routes/chat.py` <!-- remaining -->  
 **CVSS Score**: 3.1 (Low)
 
 **Issue**: Unbounded message input could lead to:
@@ -374,8 +369,7 @@ async def add_security_headers(request, call_next):
 ```
 
 #### 12. Logging of Sensitive Data
-<!-- remaining -->
-**Location**: Multiple files  
+**Location**: Multiple files <!-- remaining -->  
 **CVSS Score**: 3.0 (Low)
 
 **Issue**: Commands, API responses, and potentially credentials may be logged without redaction.

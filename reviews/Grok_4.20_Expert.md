@@ -68,8 +68,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 ### High Issues
 
-**3. SSH Command Filtering Relies on Regex → Bypassable (Severity: High)**
-<!-- remaining -->  
+**3. SSH Command Filtering Relies on Regex → Bypassable (Severity: High)** ✅ [fixed]  
 **Location**: `aurora/tools/ssh_tool.py` (full safety checks + `_is_safe_readonly` / `_is_safe_write`)  
 **Code Excerpt** (partial – execute uses `asyncssh`):
 ```python
@@ -88,8 +87,7 @@ _WRITE_COMMANDS = re.compile(r'... > >> | rm | mv | apt install | systemctl star
 - Log **every** executed command + result.
 - Per-host `allow_writes: false` default is good – keep it.
 
-**4. No Rate Limiting / Resource Protection**
-<!-- remaining -->  
+**4. No Rate Limiting / Resource Protection** ✅ [fixed]  
 **Location**: Entire FastAPI app (`app.py`, AgentLoop).  
 **Issue**: No middleware for rate limits, request size, or tool timeout enforcement beyond per-tool 60s. LLM tool loops (`max_tool_iterations: 15`) can be abused.  
 **Impact**: DoS via infinite tool loops or expensive SSH/web calls.  

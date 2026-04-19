@@ -202,7 +202,7 @@ Even ignoring the credentials case, `allow_origins=["*"]` means *any* webpage th
 
 ---
 
-### H2 — SSH command blocklist is bypassable; "read-only" mode is not a safety boundary (CVSS 8.1, High)
+### H2 — SSH command blocklist is bypassable; "read-only" mode is not a safety boundary (CVSS 8.1, High) ✅ [fixed]
 
 **Location**: [aurora/tools/ssh_tool.py:22-128](aurora/tools/ssh_tool.py#L22-L128)
 
@@ -322,8 +322,7 @@ Python string equality short-circuits on the first differing byte. Over a networ
 
 ---
 
-### M2 — Global `_pending_approvals` dict lets any authenticated client approve any pending tool call (CVSS 6.5, Medium)
-<!-- remaining -->
+### M2 — Global `_pending_approvals` dict lets any authenticated client approve any pending tool call (CVSS 6.5, Medium) ✅ [fixed]
 
 **Location**: [aurora/agent/loop.py:22-32](aurora/agent/loop.py#L22-L32)
 
@@ -346,8 +345,7 @@ In a single-user deployment this is a latent issue. In a multi-user deployment (
 
 ---
 
-### M3 — Persistent prompt-injection via auto-learned "solutions" (CVSS 6.1, Medium)
-<!-- remaining -->
+### M3 — Persistent prompt-injection via auto-learned "solutions" (CVSS 6.1, Medium) ✅ [fixed]
 
 **Locations**:
 - [aurora/agent/learner.py](aurora/agent/learner.py) — extracts a "solution" from the LLM's own output and writes it into the memory store
@@ -373,8 +371,7 @@ This is a persistent prompt-injection vector: the attacker's instructions become
 
 ---
 
-### M4 — Cross-session file listing via `FileReadTool(all_sessions=True)` (CVSS 5.5, Medium)
-<!-- remaining -->
+### M4 — Cross-session file listing via `FileReadTool(all_sessions=True)` (CVSS 5.5, Medium) ✅ [fixed]
 
 **Location**: [aurora/tools/file_tool.py](aurora/tools/file_tool.py) (around the `all_sessions` branch)
 
@@ -386,8 +383,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 
 ---
 
-### M5 — Stored XSS via unescaped `media_type` and attachment fields (CVSS 5.4, Medium)
-<!-- remaining -->
+### M5 — Stored XSS via unescaped `media_type` and attachment fields (CVSS 5.4, Medium) ✅ [fixed]
 
 **Location**: [web/js/app.js:~363-371](web/js/app.js#L363-L371) (image/video preview HTML construction)
 
@@ -401,8 +397,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 
 ## Low-Severity Findings
 
-### L1 — `datetime.utcnow()` is deprecated and naive (CVSS 3.1, Low)
-<!-- remaining -->
+### L1 — `datetime.utcnow()` is deprecated and naive (CVSS 3.1, Low) ✅ [fixed]
 
 **Location**: [aurora/memory/store.py:~82](aurora/memory/store.py#L82)
 
@@ -410,8 +405,7 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 
 ---
 
-### L2 — RSS/XML parsing via stdlib `xml.etree` rather than `defusedxml` (CVSS 3.7, Low)
-<!-- remaining -->
+### L2 — RSS/XML parsing via stdlib `xml.etree` rather than `defusedxml` (CVSS 3.7, Low) ✅ [fixed]
 
 **Location**: [aurora/tools/rss_tool.py](aurora/tools/rss_tool.py)
 
@@ -422,7 +416,6 @@ If `all_sessions=True` is set on the tool (either in config or by an LLM that ca
 ---
 
 ### L3 — Debug endpoint / debug-mode payload leaks full system prompt and conversation history (CVSS 3.5, Low)
-<!-- remaining -->
 
 **Location**: Agent loop's debug-mode handling (sent when the UI toggles `debug=true`)
 
@@ -435,7 +428,6 @@ When debug mode is on, the full outgoing provider payload — including the syst
 ---
 
 ### L4 — SSH passwords stored plaintext in `config.yaml` (CVSS 3.0, Low)
-<!-- remaining -->
 
 **Location**: [ssh_tool.py:270-271](aurora/tools/ssh_tool.py#L270-L271), paired with the config file
 

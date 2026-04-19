@@ -52,7 +52,7 @@ That disables host key verification entirely. If an attacker can intercept traff
 
 ---
 
-### 3) “Read-only” SSH mode is regex filtering, not a real safety boundary
+### 3) “Read-only” SSH mode is regex filtering, not a real safety boundary ✅ [fixed]
 
 **Severity: High (8.1/10)**
 

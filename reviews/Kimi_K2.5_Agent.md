@@ -336,8 +336,7 @@ if not hmac.compare_digest(provided, expected):
 
 ---
 
-### AUR-006: No Rate Limiting
-<!-- remaining -->
+### AUR-006: No Rate Limiting ✅ [fixed]
 
 **Severity:** Medium  
 **CVSS Score:** 5.3 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L)  
