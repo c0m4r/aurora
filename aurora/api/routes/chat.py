@@ -6,7 +6,9 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+import uuid as _uuid_mod
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
@@ -21,6 +23,14 @@ from ...tools.registry import build_registry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+
+
+def _require_valid_cid(cid: str) -> None:
+    """Raise 400 if cid is not a well-formed UUID."""
+    try:
+        _uuid_mod.UUID(cid)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid conversation ID")
 
 
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
@@ -352,6 +362,7 @@ async def list_conversations(_auth: str = Depends(require_api_key)):
 
 @router.get("/conversations/{cid}")
 async def get_conversation(cid: str, _auth: str = Depends(require_api_key)):
+    _require_valid_cid(cid)
     messages = await get_store().get_messages(cid)
     return {"messages": messages}
 
@@ -360,12 +371,14 @@ async def get_conversation(cid: str, _auth: str = Depends(require_api_key)):
 async def rename_conversation(
     cid: str, body: TitleUpdate, _auth: str = Depends(require_api_key)
 ):
+    _require_valid_cid(cid)
     await get_store().update_conversation(cid, body.title)
     return {"ok": True}
 
 
 @router.delete("/conversations/{cid}")
 async def delete_conversation(cid: str, _auth: str = Depends(require_api_key)):
+    _require_valid_cid(cid)
     await get_store().delete_conversation(cid)
     # Clean up session files if they exist
     from pathlib import Path
@@ -381,8 +394,8 @@ async def list_session_files(
     cid: str, path: str = "", _auth: str = Depends(require_api_key)
 ):
     """List a directory inside the conversation's session sandbox."""
+    _require_valid_cid(cid)
     from ...tools.sandbox import resolve as _resolve, sandbox as _sandbox
-    from fastapi import HTTPException
 
     target = _resolve(path or ".", session_id=cid)
     if target is None:
@@ -416,8 +429,8 @@ async def read_session_file(
     cid: str, path: str, _auth: str = Depends(require_api_key)
 ):
     """Return the text content of a file inside the conversation's session sandbox."""
+    _require_valid_cid(cid)
     from ...tools.sandbox import resolve as _resolve
-    from fastapi import HTTPException
 
     if not path:
         raise HTTPException(400, "path required")

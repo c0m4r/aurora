@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -114,7 +114,7 @@ def _parse_feed(xml_text: str, max_items: int) -> list[dict[str, str]]:
     """Parse RSS 2.0 or Atom feed; return list of {title, link, date, summary}."""
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as exc:
+    except Exception as exc:
         logger.debug("XML parse error: %s", exc)
         return []
 

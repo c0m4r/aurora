@@ -13,6 +13,7 @@ never sees the session prefix — it still uses plain paths like ``report.md``.
 from __future__ import annotations
 
 import contextvars
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 SANDBOX_NAME = "files"
@@ -70,7 +71,12 @@ def resolve(rel_path: str, session_id: str | None = ...) -> Path | None:  # type
     if not rel_path or not rel_path.strip():
         return None
 
-    clean = rel_path.strip()
+    # Null bytes would be silently truncated at the OS level on some platforms
+    if "\x00" in rel_path:
+        return None
+
+    # NFC-normalise to prevent homoglyph / NFC-vs-NFD bypass on normalising filesystems
+    clean = unicodedata.normalize("NFC", rel_path.strip())
 
     # Reject tilde paths — they would create a literal '~' directory
     if clean.startswith("~"):
