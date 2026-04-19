@@ -8,7 +8,7 @@ const DEFAULT_SERVER = window.location.origin;
 
 const state = {
   serverUrl:      localStorage.getItem('aurora_server') || DEFAULT_SERVER,
-  apiKey:         sessionStorage.getItem('aurora_apikey') || '',
+  apiKey:         '',  // never persisted — entered once per page load
   currentModel:   localStorage.getItem('aurora_model') || '',
   conversationId: null,
   streaming:      false,
@@ -1522,18 +1522,15 @@ async function fileToVideoData(file) {
 
   const mediaType = file.type;
 
-  // Get video duration
+  // Get video duration using the already-computed data URL (avoids createObjectURL taint)
   let duration = null;
   try {
     duration = await new Promise((resolve) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
-      video.onloadedmetadata = () => {
-        URL.revokeObjectURL(video.src);
-        resolve(video.duration);
-      };
+      video.onloadedmetadata = () => resolve(video.duration);
       video.onerror = () => resolve(null);
-      video.src = URL.createObjectURL(file);
+      video.src = dataUrl;
     });
   } catch (_) {
     // Duration unavailable, continue without it
@@ -2083,7 +2080,7 @@ $('#save-settings-btn').addEventListener('click', () => {
   state.serverUrl = $('#setting-server-url').value.trim().replace(/\/$/, '') || DEFAULT_SERVER;
   state.apiKey = $('#setting-api-key').value.trim();
   localStorage.setItem('aurora_server', state.serverUrl);
-  sessionStorage.setItem('aurora_apikey', state.apiKey);
+  // API key is intentionally not persisted to any storage
   $('#settings-modal').classList.add('hidden');
   // Reload everything
   loadModels();

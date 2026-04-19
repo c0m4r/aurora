@@ -243,8 +243,8 @@ class AgentLoop:
                         return
 
             except Exception as exc:
-                logger.exception("Provider stream error")
-                yield {"type": "error", "content": str(exc)}
+                logger.exception("Provider stream error: %s", exc)
+                yield {"type": "error", "content": "A provider error occurred"}
                 return
 
             if not tool_calls_this_turn:
