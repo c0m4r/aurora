@@ -445,48 +445,6 @@ def _is_safe_url(url: str) -> bool:
 
 ---
 
-### AUR-008: Inconsistent Environment Variable Name
-<!-- remaining -->
-
-**Severity:** Medium  
-**CVSS Score:** 4.3 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N)  
-**Location:** `aurora/config.py:38-43`
-
-#### Description
-
-The environment variable for the server API key is named `OPSAGENT_API_KEY` instead of `AURORA_API_KEY`, which is inconsistent with the application name and documentation. This could lead to:
-
-- Configuration confusion
-- Users accidentally exposing credentials in the wrong variable
-- Security misconfigurations
-
-#### Vulnerable Code
-
-```python
-_ENV_MAP: dict[str, list[str]] = {
-    "ANTHROPIC_API_KEY":  ["providers", "anthropic", "api_key"],
-    "OPENAI_API_KEY":     ["providers", "openai", "api_key"],
-    "GEMINI_API_KEY":     ["providers", "gemini", "api_key"],
-    "OPSAGENT_API_KEY":   ["server", "api_key"],  # Inconsistent naming
-}
-```
-
-#### Recommendation
-
-Change to `AURORA_API_KEY` and support both for backward compatibility:
-
-```python
-_ENV_MAP: dict[str, list[str]] = {
-    "ANTHROPIC_API_KEY":  ["providers", "anthropic", "api_key"],
-    "OPENAI_API_KEY":     ["providers", "openai", "api_key"],
-    "GEMINI_API_KEY":     ["providers", "gemini", "api_key"],
-    "AURORA_API_KEY":     ["server", "api_key"],  # Correct naming
-    "OPSAGENT_API_KEY":   ["server", "api_key"],  # Deprecated, for backward compat
-}
-```
-
----
-
 ## Low Severity Issues
 
 ### AUR-009: Weak API Key Validation ✅ [fixed]

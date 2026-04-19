@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ...agent.learner import run_extract
 from ...agent.loop import AgentLoop, submit_approval
@@ -23,14 +23,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
+_ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_ALLOWED_VIDEO_TYPES = frozenset({"video/mp4", "video/webm", "video/quicktime"})
+
+
 class ImageData(BaseModel):
-    data: str         # base64-encoded
-    media_type: str   # e.g. "image/png"
+    data: str
+    media_type: str
+
+    @field_validator("media_type")
+    @classmethod
+    def _check_image_type(cls, v: str) -> str:
+        if v not in _ALLOWED_IMAGE_TYPES:
+            raise ValueError(f"Unsupported image media type: {v!r}")
+        return v
 
 
 class VideoData(BaseModel):
-    data: str         # base64-encoded
-    media_type: str   # e.g. "video/mp4"
+    data: str
+    media_type: str
+
+    @field_validator("media_type")
+    @classmethod
+    def _check_video_type(cls, v: str) -> str:
+        if v not in _ALLOWED_VIDEO_TYPES:
+            raise ValueError(f"Unsupported video media type: {v!r}")
+        return v
 
 
 class ChatRequest(BaseModel):
@@ -220,8 +238,12 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                             source_conv_id=conv_id,
                         )
 
-                    # Auto-learn: extract and save solution inline (visible to user)
-                    if do_learn and tool_log:
+                    # Auto-learn: only from file-only turns — never from SSH, web, or RSS output,
+                    # which may contain attacker-controlled content that could be
+                    # persisted as prompt injection in future system prompts.
+                    _EXTERNAL_TOOLS = frozenset({"ssh", "scp_upload", "websearch", "web", "rss"})
+                    has_external = any(e["name"] in _EXTERNAL_TOOLS for e in tool_log)
+                    if do_learn and tool_log and not has_external:
                         async for learn_event in run_extract(
                             registry=registry,
                             model_id=model_id,
@@ -238,8 +260,8 @@ async def chat_stream(req: ChatRequest, _auth: str = Depends(require_api_key)):
                 yield f"data: {json.dumps(event)}\n\n"
 
         except Exception as exc:
-            logger.exception("Agent loop error")
-            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)})}\n\n"
+            logger.exception("Agent loop error: %s", exc)
+            yield f"data: {json.dumps({'type': 'error', 'content': 'An internal error occurred'})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(
@@ -462,6 +484,7 @@ async def delete_solution(sid: int, _auth: str = Depends(require_api_key)):
 
 
 class ToolApproval(BaseModel):
+    conversation_id: str
     tool_id: str
     approve: bool
 
@@ -469,7 +492,7 @@ class ToolApproval(BaseModel):
 @router.post("/tool_approve")
 async def tool_approve(body: ToolApproval, _auth: str = Depends(require_api_key)):
     """Resolve a pending secure-mode approval for a specific tool call."""
-    ok = submit_approval(body.tool_id, body.approve)
+    ok = submit_approval(body.conversation_id, body.tool_id, body.approve)
     return {"ok": ok}
 
 

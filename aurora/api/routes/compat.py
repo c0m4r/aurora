@@ -7,7 +7,7 @@ import time
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -101,28 +101,32 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 
     if req.stream:
         async def stream_gen():
-            async for event in loop.run(messages, model_id, **kwargs):
-                etype = event.get("type")
-                if etype == "text":
-                    chunk = {
-                        "id": comp_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": model_id,
-                        "choices": [{"index": 0, "delta": {"content": event["content"]}, "finish_reason": None}],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                elif etype == "done":
-                    stop_chunk = {
-                        "id": comp_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": model_id,
-                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                    }
-                    yield f"data: {json.dumps(stop_chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
+            try:
+                async for event in loop.run(messages, model_id, **kwargs):
+                    etype = event.get("type")
+                    if etype == "text":
+                        chunk = {
+                            "id": comp_id,
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": model_id,
+                            "choices": [{"index": 0, "delta": {"content": event["content"]}, "finish_reason": None}],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    elif etype == "done":
+                        stop_chunk = {
+                            "id": comp_id,
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": model_id,
+                            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                        }
+                        yield f"data: {json.dumps(stop_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+            except Exception as exc:
+                logger.exception("Compat stream error: %s", exc)
+                yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             stream_gen(),
@@ -135,9 +139,13 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 
     # Non-streaming
     parts: list[str] = []
-    async for event in loop.run(messages, model_id, **kwargs):
-        if event.get("type") == "text":
-            parts.append(event["content"])
+    try:
+        async for event in loop.run(messages, model_id, **kwargs):
+            if event.get("type") == "text":
+                parts.append(event["content"])
+    except Exception as exc:
+        logger.exception("Compat completion error: %s", exc)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     return {
         "id": comp_id,

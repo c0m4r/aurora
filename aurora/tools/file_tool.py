@@ -39,15 +39,6 @@ class FileReadTool(BaseTool):
                         "description": "Max lines to return for large files (default: 500).",
                         "default": 500,
                     },
-                    "all_sessions": {
-                        "type": "boolean",
-                        "description": (
-                            "If true, list files from ALL conversation sessions "
-                            "(not just the current one). Only useful with path='.' "
-                            "when the user asks about files from other conversations."
-                        ),
-                        "default": False,
-                    },
                 },
                 "required": [],
             },

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 from typing import Any
 
 from .base import BaseTool, ToolDefinition
@@ -21,24 +22,46 @@ logger = logging.getLogger(__name__)
 
 # ─── Safety patterns ──────────────────────────────────────────────────────────
 
-# Shell evasion patterns — attempts to obfuscate commands
+# Shell evasion patterns — attempts to obfuscate or spawn arbitrary execution
 _EVASION_PATTERNS = re.compile(
     r"""
-    \$'\\.+                        # $'\x72\x6d' ANSI-C quoting for hex/octal
-    | \$\(.*\b(?:base64|xxd)\b     # $(echo cm0= | base64 -d) decode tricks
-    | \bbase64\s+-d\b              # base64 decode piped to shell
-    | \bxxd\s+-r\b                 # xxd reverse (hex to binary)
-    | \beval\b                     # eval arbitrary string as command
-    | \bexec\b\s+\d*[<>]          # exec with redirections (fd manipulation)
-    | \bsource\b                   # source a script
-    | \bpython[23]?\s+-c\b        # python -c 'import os; os.system(...)'
-    | \bperl\s+-e\b               # perl -e 'system(...)'
-    | \bruby\s+-e\b               # ruby -e '`rm ...`'
-    | \blua\s+-e\b                # lua -e 'os.execute(...)'
-    | \bphp\s+-r\b                # php -r 'system(...)'
-    | \bnohup\b                   # nohup — survives session close
-    | \bdisown\b                  # disown — detach from shell
-    | \bsetsid\b                  # setsid — new session leader
+    \$'\\.+                              # $'\x72\x6d' ANSI-C quoting (hex/octal escape)
+    | \$\(.*\b(?:base64|xxd)\b          # $(echo cm0= | base64 -d) decode tricks
+    | \bbase64\s+(?:-d\b|--decode\b)    # base64 -d / base64 --decode piped to shell
+    | \bxxd\s+-r\b                      # xxd reverse (hex to binary)
+    | \beval\b                          # eval arbitrary string as command
+    | \bexec\b\s+\d*[<>]               # exec with redirections (fd manipulation)
+    | \bsource\b                        # source a script
+    | \bpython[23]?\s+-c\b             # python -c 'import os; os.system(...)'
+    | \bperl\s+-e\b                    # perl -e 'system(...)'
+    | \bruby\s+-e\b                    # ruby -e '`rm ...`'
+    | \blua\s+-e\b                     # lua -e 'os.execute(...)'
+    | \bphp\s+-r\b                     # php -r 'system(...)'
+    | \bnohup\b                        # nohup — survives session close
+    | \bdisown\b                       # disown — detach from shell
+    | \bsetsid\b                       # setsid — new session leader
+
+    # Shell spawning via -c flag
+    | \b(?:ba|da|z|tc|k|c)?sh\s+(?:-\w+\s+)*-c\b   # sh/bash/dash/zsh/ksh -c 'code'
+
+    # busybox is a Swiss-army knife that can run any blocked command
+    | \bbusybox\b
+
+    # Pipe into a shell — command output executed as code
+    | \|\s*(?:ba|da|z|tc|k)?sh\b
+
+    # awk/gawk/mawk with system() — executes arbitrary shell commands
+    | \b(?:g|m)?awk\b.*\bsystem\s*\(
+
+    # tar --to-command passes each extracted file to an external command
+    | \btar\b.*--to-command\b
+
+    # openssl to decode+execute (openssl enc -d -base64 | sh)
+    | \bopenssl\b.*\|\s*(?:ba|da|z)?sh\b
+
+    # find -exec / xargs piped into a shell (find -exec sh -c ...; xargs bash)
+    | \bfind\b.*-exec\s+(?:ba|da|z)?sh\b
+    | \bxargs\b.*\b(?:ba|da|z)?sh\b
     """,
     re.VERBOSE | re.IGNORECASE,
 )
@@ -46,13 +69,16 @@ _EVASION_PATTERNS = re.compile(
 # Blocked in ALL modes — irreversible / catastrophic
 _ALWAYS_BLOCKED = re.compile(
     r"""
-    \brm\s+(?:-[a-zA-Z]*\s+)*(?:--\s+)?/(?:\s|$)  # rm -rf / or rm /
+    # Dangerous rm targets: root and critical system directories
+    \brm\s+(?:-[a-zA-Z]*\s+)*(?:--\s+)?/(?:\s|$)       # rm -rf /
+    | \brm\b.*\s/(?:etc|usr|bin|sbin|boot|lib|lib64|proc|sys|run)\b  # rm /etc /usr etc.
+
     | \bmkfs\b
     | \bwipefs\b
     | \bshred\b.*\s/dev/
-    | \bdd\b.*\bof=/dev/(?!null|zero|random|urandom)  # dd to real block dev
-    | :\s*\(\s*\)\s*\{.*:\|:.*\}                   # fork bomb
-    | \bchroot\s+/\s                                # chroot to root
+    | \bdd\b.*\bof=/dev/(?!null|zero|random|urandom)    # dd to real block dev
+    | :\s*\(\s*\)\s*\{.*:\|:.*\}                        # fork bomb
+    | \bchroot\s+/\s                                    # chroot to root
     """,
     re.VERBOSE | re.IGNORECASE,
 )
@@ -128,16 +154,22 @@ _WRITE_COMMANDS = re.compile(
 )
 
 
+def _normalise(command: str) -> str:
+    """NFKC-normalise to collapse Unicode homoglyphs before pattern matching."""
+    return unicodedata.normalize("NFKC", command)
+
+
 def _is_safe_readonly(command: str) -> tuple[bool, str]:
     """Return (is_allowed, reason). Blocks write operations in read-only mode."""
-    if _EVASION_PATTERNS.search(command):
+    cmd = _normalise(command)
+    if _EVASION_PATTERNS.search(cmd):
         return False, (
-            "command uses shell evasion patterns (encoding, eval, scripting interpreters). "
+            "command uses shell evasion patterns (encoding, eval, shell spawning, or scripting interpreters). "
             "Use plain, readable commands instead."
         )
-    if _ALWAYS_BLOCKED.search(command):
+    if _ALWAYS_BLOCKED.search(cmd):
         return False, "catastrophic operation unconditionally blocked"
-    if _WRITE_COMMANDS.search(command):
+    if _WRITE_COMMANDS.search(cmd):
         return False, (
             "command contains a write/state-changing operation. "
             "The user must explicitly ask for system changes before you use write mode."
@@ -147,12 +179,13 @@ def _is_safe_readonly(command: str) -> tuple[bool, str]:
 
 def _is_safe_write(command: str) -> tuple[bool, str]:
     """Return (is_allowed, reason). Only blocks catastrophic commands."""
-    if _EVASION_PATTERNS.search(command):
+    cmd = _normalise(command)
+    if _EVASION_PATTERNS.search(cmd):
         return False, (
-            "command uses shell evasion patterns (encoding, eval, scripting interpreters). "
+            "command uses shell evasion patterns (encoding, eval, shell spawning, or scripting interpreters). "
             "Use plain, readable commands instead."
         )
-    if _ALWAYS_BLOCKED.search(command):
+    if _ALWAYS_BLOCKED.search(cmd):
         return False, "catastrophic/irreversible operation is always blocked for safety"
     return True, ""
 

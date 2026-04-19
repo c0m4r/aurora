@@ -39,7 +39,7 @@ _ENV_MAP: dict[str, list[str]] = {
     "ANTHROPIC_API_KEY":  ["providers", "anthropic", "api_key"],
     "OPENAI_API_KEY":     ["providers", "openai", "api_key"],
     "GEMINI_API_KEY":     ["providers", "gemini", "api_key"],
-    "OPSAGENT_API_KEY":   ["server", "api_key"],
+    "AURORA_API_KEY":   ["server", "api_key"],
 }
 
 _raw: dict = {}

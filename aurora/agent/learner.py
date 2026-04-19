@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, AsyncIterator
 
 from ..memory.store import MemoryStore
@@ -104,9 +105,10 @@ async def run_extract(
             yield {"type": "learn", "status": "skipped"}
             return
 
-        problem = result.get("problem", "").strip()
-        solution = result.get("solution", "").strip()
+        problem = _sanitize(result.get("problem", ""), _MAX_PROBLEM_LEN)
+        solution = _sanitize(result.get("solution", ""), _MAX_SOLUTION_LEN)
         if not problem or not solution:
+            logger.info("Learner: solution rejected (empty or injection attempt)")
             yield {"type": "learn", "status": "skipped"}
             return
 
@@ -139,6 +141,24 @@ async def run_extract(
     except Exception:
         logger.warning("Learner: extraction failed", exc_info=True)
         yield {"type": "learn", "status": "error"}
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>", re.DOTALL)
+_INJECTION_RE = re.compile(
+    r"SYSTEM\s*:|###\s*system\b|ignore\s+(?:previous|prior|above)\s+instructions"
+    r"|<\s*script\b|<\s*iframe\b|javascript\s*:",
+    re.IGNORECASE,
+)
+_MAX_PROBLEM_LEN = 1000
+_MAX_SOLUTION_LEN = 3000
+
+
+def _sanitize(text: str, max_len: int) -> str | None:
+    """Strip HTML tags, enforce length cap, reject prompt-injection attempts."""
+    text = _HTML_TAG_RE.sub("", text).strip()
+    if _INJECTION_RE.search(text):
+        return None
+    return text[:max_len]
 
 
 def _parse_json(text: str) -> dict | None:

@@ -8,7 +8,7 @@ const DEFAULT_SERVER = window.location.origin;
 
 const state = {
   serverUrl:      localStorage.getItem('aurora_server') || DEFAULT_SERVER,
-  apiKey:         localStorage.getItem('aurora_apikey') || '',
+  apiKey:         sessionStorage.getItem('aurora_apikey') || '',
   currentModel:   localStorage.getItem('aurora_model') || '',
   conversationId: null,
   streaming:      false,
@@ -390,16 +390,40 @@ function escHtml(s) {
 }
 
 function appendUserMessage(text, images, videos, timestamp) {
-  const imagesHtml = images && images.length
-    ? `<div class="message-images">${images.map(img => `<img src="data:${img.media_type};base64,${img.data}" alt="attached" />`).join('')}</div>`
-    : '';
-  const videosHtml = videos && videos.length
-    ? `<div class="message-videos">${videos.map(vid => `<video src="data:${vid.media_type};base64,${vid.data}" controls preload="metadata"></video>`).join('')}</div>`
-    : '';
   const ts = timestamp || new Date().toISOString();
   const msgEl = document.createElement('div');
   msgEl.className = 'message user';
-  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" data-action="copy-message" title="Copy">⎘</button></div><div class="message-body">${imagesHtml}${videosHtml}${escHtml(text)}</div>`;
+  msgEl.innerHTML = `<div class="message-header"><div class="message-avatar">🦄</div><span class="message-role">You</span><span class="message-time"></span><button class="message-copy" data-action="copy-message" title="Copy">⎘</button></div><div class="message-body"></div>`;
+  const body = msgEl.querySelector('.message-body');
+
+  if (images && images.length) {
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'message-images';
+    images.forEach(img => {
+      const el = document.createElement('img');
+      el.src = `data:${img.media_type};base64,${img.data}`;
+      el.alt = 'attached';
+      imgWrap.appendChild(el);
+    });
+    body.appendChild(imgWrap);
+  }
+
+  if (videos && videos.length) {
+    const vidWrap = document.createElement('div');
+    vidWrap.className = 'message-videos';
+    videos.forEach(vid => {
+      const el = document.createElement('video');
+      el.src = `data:${vid.media_type};base64,${vid.data}`;
+      el.controls = true;
+      el.preload = 'metadata';
+      vidWrap.appendChild(el);
+    });
+    body.appendChild(vidWrap);
+  }
+
+  const textNode = document.createTextNode(text);
+  body.appendChild(textNode);
+
   fmt_relative(msgEl.querySelector('.message-time'), ts);
   appendMessage(msgEl);
   return msgEl;
@@ -932,7 +956,7 @@ async function sendMessage(text, images, videos) {
               } else if (msg.type === 'thinking') {
                 content = `💭 <em>(${(msg.content || '').length} chars of thinking)</em>`;
               } else if (msg.type === 'image' || msg.type === 'video') {
-                content = `${msg.type} (${msg.media_type}, ${(msg.data_length || 0) / 1024}KB)`;
+                content = `${escHtml(msg.type)} (${escHtml(msg.media_type || '')}, ${(msg.data_length || 0) / 1024}KB)`;
               } else {
                 const preview = (msg.content || '').substring(0, 200);
                 content = escHtml(preview);
@@ -1532,13 +1556,21 @@ function renderImagePreviews() {
   pendingImages.forEach((img, idx) => {
     const item = document.createElement('div');
     item.className = 'image-preview-item';
-    item.innerHTML = `<img src="${img.dataUrl}" alt="Attached image" />
-      <button class="image-preview-remove" data-idx="${idx}" title="Remove">✕</button>`;
-    item.querySelector('.image-preview-remove').addEventListener('click', (e) => {
+    const imgEl = document.createElement('img');
+    imgEl.src = img.dataUrl;
+    imgEl.alt = 'Attached image';
+    const btn = document.createElement('button');
+    btn.className = 'image-preview-remove';
+    btn.dataset.idx = idx;
+    btn.title = 'Remove';
+    btn.textContent = '✕';
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       pendingImages.splice(idx, 1);
       renderImagePreviews();
     });
+    item.appendChild(imgEl);
+    item.appendChild(btn);
     imagePreviewContainer.appendChild(item);
   });
 }
@@ -1556,15 +1588,28 @@ function renderVideoPreviews() {
   pendingVideos.forEach((vid, idx) => {
     const item = document.createElement('div');
     item.className = 'video-preview-item';
-    const durationStr = vid.duration ? formatDuration(vid.duration) : '';
-    item.innerHTML = `<video src="${vid.dataUrl}" muted preload="metadata"></video>
-      ${durationStr ? `<span class="video-duration">${durationStr}</span>` : ''}
-      <button class="video-preview-remove" data-idx="${idx}" title="Remove">✕</button>`;
-    item.querySelector('.video-preview-remove').addEventListener('click', (e) => {
+    const videoEl = document.createElement('video');
+    videoEl.src = vid.dataUrl;
+    videoEl.muted = true;
+    videoEl.preload = 'metadata';
+    item.appendChild(videoEl);
+    if (vid.duration) {
+      const span = document.createElement('span');
+      span.className = 'video-duration';
+      span.textContent = formatDuration(vid.duration);
+      item.appendChild(span);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'video-preview-remove';
+    btn.dataset.idx = idx;
+    btn.title = 'Remove';
+    btn.textContent = '✕';
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       pendingVideos.splice(idx, 1);
       renderVideoPreviews();
     });
+    item.appendChild(btn);
     videoPreviewContainer.appendChild(item);
   });
 }
@@ -2038,7 +2083,7 @@ $('#save-settings-btn').addEventListener('click', () => {
   state.serverUrl = $('#setting-server-url').value.trim().replace(/\/$/, '') || DEFAULT_SERVER;
   state.apiKey = $('#setting-api-key').value.trim();
   localStorage.setItem('aurora_server', state.serverUrl);
-  localStorage.setItem('aurora_apikey', state.apiKey);
+  sessionStorage.setItem('aurora_apikey', state.apiKey);
   $('#settings-modal').classList.add('hidden');
   // Reload everything
   loadModels();

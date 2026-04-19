@@ -23,9 +23,14 @@ _pending_approvals: dict[str, asyncio.Future] = {}
 _APPROVAL_TIMEOUT = 300.0  # seconds
 
 
-def submit_approval(tool_id: str, approve: bool) -> bool:
-    """Resolve a pending approval future. Returns True if a future was waiting."""
-    fut = _pending_approvals.get(tool_id)
+def submit_approval(conversation_id: str, tool_id: str, approve: bool) -> bool:
+    """Resolve a pending approval future. Returns True if a future was waiting.
+
+    Approvals are scoped to a conversation so one authenticated client cannot
+    approve tool calls belonging to a different conversation.
+    """
+    key = f"{conversation_id}:{tool_id}"
+    fut = _pending_approvals.get(key)
     if fut is None or fut.done():
         return False
     fut.set_result(approve)
@@ -267,7 +272,8 @@ class AgentLoop:
             if secure:
                 for tc in tool_calls_this_turn:
                     fut: asyncio.Future = asyncio.get_running_loop().create_future()
-                    _pending_approvals[tc["id"]] = fut
+                    key = f"{self.conversation_id or ''}:{tc['id']}"
+                    _pending_approvals[key] = fut
                     yield {
                         "type": "tool_approval_required",
                         "id": tc["id"],
@@ -279,7 +285,7 @@ class AgentLoop:
                     except asyncio.TimeoutError:
                         approved = False
                     finally:
-                        _pending_approvals.pop(tc["id"], None)
+                        _pending_approvals.pop(key, None)
                     approvals[tc["id"]] = approved
                     yield {
                         "type": "tool_approval_resolved",
