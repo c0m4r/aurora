@@ -173,6 +173,23 @@ def create_app() -> FastAPI:
     app.add_middleware(_SecurityHeadersMiddleware)
     app.add_middleware(_RateLimitMiddleware)
 
+    # Auth endpoints (no key required)
+    @app.get("/api/auth-status", include_in_schema=True)
+    async def auth_status():
+        from .auth import _auth_disabled
+        return {"auth_required": not _auth_disabled()}
+
+    @app.post("/api/login", include_in_schema=True)
+    async def login(request: Request):
+        from .auth import validate_key, _configured_key, _auth_disabled
+        if _auth_disabled():
+            return {"api_key": ""}
+        body = await request.json()
+        key = (body.get("key") or "").strip()
+        if not validate_key(key):
+            return JSONResponse({"detail": "Invalid key"}, status_code=401)
+        return {"api_key": _configured_key()}
+
     # API routes
     from .routes.chat import router as chat_router
 
@@ -210,6 +227,23 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+def _print_config_error(message: str) -> None:
+    red = "\033[1;31m"
+    yellow = "\033[1;33m"
+    cyan = "\033[1;36m"
+    reset = "\033[0m"
+    print(f"\n{red}Configuration error{reset}\n")
+    print(f"  {yellow}{message}{reset}\n")
+    print(f"{cyan}Quick fix options:{reset}")
+    print("  1. Set a real API key in config.yaml:")
+    print("       server:")
+    print("         api_key: your-secret-key")
+    print("  2. For local use only, disable authentication:")
+    print("       server:")
+    print("         allow_unauthenticated: true")
+    print()
+
+
 def run():
     """Entry point for aurora-server CLI."""
     import argparse
@@ -239,7 +273,22 @@ def run():
     port = args.port or int(getattr(getattr(cfg, "server", None), "port", 8000) or 8000)
 
     # Fail closed on dangerous auth configurations before binding the port.
-    validate_auth_config(host)
+    try:
+        validate_auth_config(host)
+    except RuntimeError as exc:
+        _print_config_error(str(exc))
+        sys.exit(1)
+
+    from .auth import _auth_disabled, generate_otp
+    if not _auth_disabled():
+        otp = generate_otp()
+        green = "\033[1;32m"
+        bold = "\033[1m"
+        reset = "\033[0m"
+        print(f"\n{green}{'─' * 48}")
+        print(f"  One-time password: {bold}{otp}{reset}{green}")
+        print(f"  Use this to log in via the web UI.")
+        print(f"{'─' * 48}{reset}\n")
 
     import uvicorn
 

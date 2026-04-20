@@ -172,6 +172,25 @@
     </div>
   </div>
 
+  <!-- Login overlay -->
+  <div id="login-overlay" class="login-overlay hidden">
+    <div class="login-box">
+      <div class="login-icon">🪼</div>
+      <h1>Aurora</h1>
+      <p class="login-subtitle">Enter your API key or one-time password</p>
+      <form id="login-form" class="login-form">
+        <input
+          id="login-key-input"
+          type="password"
+          placeholder="API key or one-time password"
+          autocomplete="current-password"
+        />
+        <button type="submit" class="btn-primary">Sign in</button>
+        <p id="login-error" class="login-error hidden">Invalid key — please try again.</p>
+      </form>
+    </div>
+  </div>
+
   <script src="/assets/js/app.js" type="module"></script>
 </body>
 </html>

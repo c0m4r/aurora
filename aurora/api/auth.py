@@ -3,12 +3,39 @@ from __future__ import annotations
 
 import hmac
 import logging
+import secrets
+import string
 
 from fastapi import Header, HTTPException
 
 logger = logging.getLogger(__name__)
 
 _SENTINEL_KEYS = {"change-me-please", "change-me-in-production"}
+_OTP_ALPHABET = string.ascii_uppercase + string.digits
+_otp: str | None = None
+
+
+def generate_otp() -> str:
+    global _otp
+    _otp = ''.join(secrets.choice(_OTP_ALPHABET) for _ in range(8))
+    return _otp
+
+
+def get_otp() -> str | None:
+    return _otp
+
+
+def validate_key(provided: str) -> bool:
+    """Accept either the configured API key or the current OTP."""
+    if not provided:
+        return False
+    expected = _configured_key()
+    if expected and expected not in _SENTINEL_KEYS and hmac.compare_digest(provided, expected):
+        return True
+    otp = _otp
+    if otp and hmac.compare_digest(provided, otp):
+        return True
+    return False
 
 
 def _configured_key() -> str:

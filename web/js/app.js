@@ -8,7 +8,7 @@ const DEFAULT_SERVER = window.location.origin;
 
 const state = {
   serverUrl:      localStorage.getItem('aurora_server') || DEFAULT_SERVER,
-  apiKey:         '',  // never persisted — entered once per page load
+  apiKey:         sessionStorage.getItem('aurora_api_key') || '',  // cleared on tab close
   currentModel:   localStorage.getItem('aurora_model') || '',
   conversationId: null,
   streaming:      false,
@@ -258,6 +258,7 @@ async function approveToolCall(toolId, approve) {
 async function loadModels() {
   try {
     const resp = await fetch(API('/api/models'), { headers: headers() });
+    if (resp.status === 401) { handleUnauthorized(); return; }
     if (!resp.ok) return;
     const data = await resp.json();
     const sel = $('#model-select');
@@ -287,6 +288,7 @@ $('#model-select').addEventListener('change', (e) => {
 async function loadConversations() {
   try {
     const resp = await fetch(API('/api/conversations'), { headers: headers() });
+    if (resp.status === 401) { handleUnauthorized(); return; }
     if (!resp.ok) return;
     const convs = await resp.json();
     renderConversationList(convs);
@@ -2080,7 +2082,11 @@ $('#save-settings-btn').addEventListener('click', () => {
   state.serverUrl = $('#setting-server-url').value.trim().replace(/\/$/, '') || DEFAULT_SERVER;
   state.apiKey = $('#setting-api-key').value.trim();
   localStorage.setItem('aurora_server', state.serverUrl);
-  // API key is intentionally not persisted to any storage
+  if (state.apiKey) {
+    sessionStorage.setItem('aurora_api_key', state.apiKey);
+  } else {
+    sessionStorage.removeItem('aurora_api_key');
+  }
   $('#settings-modal').classList.add('hidden');
   // Reload everything
   loadModels();
@@ -2093,8 +2099,63 @@ $('.logo').addEventListener('contextmenu', (e) => {
   $('#settings-modal').classList.remove('hidden');
 });
 
+// ─── Login overlay ────────────────────────────────────────────────────────────
+function showLoginOverlay() {
+  $('#login-overlay').classList.remove('hidden');
+  $('#login-key-input').focus();
+}
+
+function hideLoginOverlay() {
+  $('#login-overlay').classList.add('hidden');
+}
+
+function handleUnauthorized() {
+  state.apiKey = '';
+  sessionStorage.removeItem('aurora_api_key');
+  showLoginOverlay();
+}
+
+$('#login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = $('#login-key-input').value.trim();
+  if (!key) return;
+  const errorEl = $('#login-error');
+  errorEl.classList.add('hidden');
+  try {
+    const res = await fetch(API('/api/login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    if (res.ok) {
+      const { api_key } = await res.json();
+      state.apiKey = api_key || key;
+      sessionStorage.setItem('aurora_api_key', state.apiKey);
+      hideLoginOverlay();
+      await Promise.all([loadModels(), loadConversations()]);
+      inputEl.focus();
+    } else {
+      errorEl.classList.remove('hidden');
+      $('#login-key-input').select();
+    }
+  } catch {
+    errorEl.textContent = 'Could not reach the server.';
+    errorEl.classList.remove('hidden');
+  }
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
+  try {
+    const res = await fetch(API('/api/auth-status'));
+    if (res.ok) {
+      const { auth_required } = await res.json();
+      if (auth_required && !state.apiKey) {
+        showLoginOverlay();
+        return;
+      }
+    }
+  } catch { /* server unreachable — fall through and let API calls surface the error */ }
   await Promise.all([loadModels(), loadConversations()]);
   inputEl.focus();
 })();
