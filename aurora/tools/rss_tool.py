@@ -25,33 +25,30 @@ _HEADERS = {
 # Curated feed catalogue, grouped by category
 FEED_CATALOGUE: dict[str, dict[str, str]] = {
     "world": {
-        "bbc_world":     "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "bbc_world":     "https://feeds.bbci.co.uk/news/world/rss.xml",
         "nytimes_world": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
         "aljazeera":     "https://www.aljazeera.com/xml/rss/all.xml",
         "cnn_top":       "http://rss.cnn.com/rss/edition.rss",
-    },
-    "world_in_polish": {
-        "polsatnews":    "https://www.polsatnews.pl/rss/swiat.xml",
     },
     "technology": {
         "techcrunch":    "https://techcrunch.com/feed/",
         "theverge":      "https://www.theverge.com/rss/index.xml",
         "wired":         "https://www.wired.com/feed/rss",
         "arstechnica":   "https://feeds.arstechnica.com/arstechnica/index",
-        "bbc_tech":      "http://feeds.bbci.co.uk/news/technology/rss.xml",
+        "bbc_tech":      "https://feeds.bbci.co.uk/news/technology/rss.xml",
         "hackernews":    "https://news.ycombinator.com/rss",
-        "slashdot":      "http://rss.slashdot.org/Slashdot/slashdotMain",
+        "slashdot":      "https://rss.slashdot.org/Slashdot/slashdotMain",
     },
     "science": {
         "nasa":          "https://www.nasa.gov/rss/dyn/breaking_news.rss",
         "nature":        "https://www.nature.com/nature.rss",
-        "bbc_science":   "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+        "bbc_science":   "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
         "physorg":       "https://phys.org/rss-feed/",
     },
     "business": {
         "wsj_markets":   "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
         "economist_biz": "https://www.economist.com/business/rss.xml",
-        "bbc_business":  "http://feeds.bbci.co.uk/news/business/rss.xml",
+        "bbc_business":  "https://feeds.bbci.co.uk/news/business/rss.xml",
         "ft_world":      "https://www.ft.com/world?format=rss",
     },
     "linux": {
@@ -68,7 +65,11 @@ FEED_CATALOGUE: dict[str, dict[str, str]] = {
     },
     "weather_alerts_in_polish": {
         "lowcy_burz":    "https://lowcyburz.pl/feed/",
-    }
+    },
+    "poland": {
+        "rmf24":         "https://www.rmf24.pl/fakty/feed",
+        "tvn24":         "https://tvn24.pl/najnowsze.xml",
+    },
 }
 
 # Flat name → url lookup built from catalogue
@@ -202,6 +203,7 @@ class RSSFeedTool(BaseTool):
                 "multiple feeds at once, or a custom `url` for any RSS/Atom feed.\n\n"
                 "## When to use this tool\n"
                 "- User asks for latest news (world, tech, science, business, Linux, security)\n"
+                "If not sure which category of news user wants, ask the user to clarify.\n"
                 "- User asks what's new in a specific publication (BBC, NYT, Ars Technica, etc.)\n"
                 "- User asks about recent CVEs or security advisories\n"
                 "- User asks for latest Arch Linux or Linux kernel news\n\n"
