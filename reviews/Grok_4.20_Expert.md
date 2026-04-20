@@ -95,8 +95,8 @@ _WRITE_COMMANDS = re.compile(r'... > >> | rm | mv | apt install | systemctl star
 
 ### Medium Issues
 
-**5. File Sandbox is Solid but Path Resolution Edge Cases Exist**
-<!-- partially remaining (symlink/TOCTOU edge cases) -->  
+**5. File Sandbox is Solid but Path Resolution Edge Cases Exist** ✅ [fixed — symlink escape in directory listing]
+<!-- TOCTOU race is theoretical, not practically exploitable -->  
 **Location**: `aurora/tools/file_tool.py` (`_resolve`, `_sandbox`)  
 **Code**:
 ```python

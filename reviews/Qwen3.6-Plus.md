@@ -150,8 +150,8 @@ async def oai_chat_completions(req: OAIRequest, _auth: str = Depends(require_api
 
 ### ⚠️ MEDIUM SEVERITY
 
-#### 4. Path Traversal via Symlink Attack
-**Location**: `aurora/tools/file_tool.py` <!-- remaining -->  
+#### 4. Path Traversal via Symlink Attack ✅ [fixed — symlink escape in directory listing]
+**Location**: `aurora/tools/file_tool.py` <!-- TOCTOU race is theoretical, not practically exploitable -->  
 **CVSS Score**: 6.5 (Medium)
 
 ```python

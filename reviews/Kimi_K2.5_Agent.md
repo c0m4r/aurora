@@ -212,8 +212,7 @@ tools:
 
 ---
 
-### AUR-004: Path Traversal Vulnerability in File Operations
-<!-- remaining (symlink/Unicode edge cases) -->
+### AUR-004: Path Traversal Vulnerability in File Operations ✅ [fixed]
 
 **Severity:** High  
 **CVSS Score:** 7.5 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)  

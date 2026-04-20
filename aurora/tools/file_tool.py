@@ -180,8 +180,18 @@ _EXT_TO_LANG: dict[str, str] = {
 }
 
 
+def _within_sandbox(path: Path, sandbox_resolved: Path) -> bool:
+    """Return True if path (following symlinks) resolves to inside sandbox_resolved."""
+    try:
+        path.resolve().relative_to(sandbox_resolved)
+        return True
+    except ValueError:
+        return False
+
+
 def _list_dir(d: Path) -> str:
     sandbox = _sandbox()
+    sb_resolved = sandbox.resolve()
     try:
         entries = sorted(d.iterdir(), key=lambda p: (p.is_file(), p.name))
     except PermissionError:
@@ -194,6 +204,9 @@ def _list_dir(d: Path) -> str:
     lines = []
     for entry in entries:
         rel = entry.relative_to(sandbox)
+        if entry.is_symlink() and not _within_sandbox(entry, sb_resolved):
+            lines.append(f"  🔗  {rel}  [symlink outside sandbox — blocked]")
+            continue
         if entry.is_dir():
             sub_count = sum(1 for _ in entry.iterdir())
             lines.append(f"  📁  {rel}/  ({sub_count} items)")
@@ -216,12 +229,15 @@ def _list_all_sessions() -> str:
     root = Path.cwd() / "files" / "sessions"
     for sid in sessions:
         session_dir = root / sid
-        file_count = sum(1 for f in session_dir.rglob("*") if f.is_file())
-        lines.append(f"  Session {sid[:12]}…  ({file_count} file{'s' if file_count != 1 else ''})")
-        for f in sorted(session_dir.rglob("*")):
-            if f.is_file():
-                rel = f.relative_to(session_dir)
-                lines.append(f"    📄  {rel}  ({_human_size(f.stat().st_size)})")
+        session_resolved = session_dir.resolve()
+        safe_files = [
+            f for f in sorted(session_dir.rglob("*"))
+            if f.is_file() and _within_sandbox(f, session_resolved)
+        ]
+        lines.append(f"  Session {sid[:12]}…  ({len(safe_files)} file{'s' if len(safe_files) != 1 else ''})")
+        for f in safe_files:
+            rel = f.relative_to(session_dir)
+            lines.append(f"    📄  {rel}  ({_human_size(f.stat().st_size)})")
     lines.append(f"\nTotal: {len(sessions)} session(s)")
     return "\n".join(lines)
 
