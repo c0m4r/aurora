@@ -46,9 +46,11 @@ DEFAULT_WHITELIST: list[str] = [
     "askubuntu.com",
     "unix.stackexchange.com",
     # News
+    "bbc.com",
     "cnn.com",
     "apnews.com",
     "reuters.com",
+    "aljazeera.com",
     "news.google.com",
     "news.ycombinator.com",
     "rmf24.pl",
