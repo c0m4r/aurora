@@ -41,8 +41,8 @@ fi
 source .venv/bin/activate
 
 echo -e "${BLUE}📦 Installing dependencies…${NC}\n"
-pip install --upgrade pip
-pip install --uploaded-prior-to="$(date +\%Y-\%m-\%d -d "7days ago")" -r requirements.lock
+pip install --upgrade pip==26.1
+pip install --uploaded-prior-to="$(date +\%Y-\%m-\%d -d "7days ago")" --require-hashes -r requirements.txt
 echo -e "\n${GREEN}✅ Dependencies installed${NC}"
 
 # Create default config if not present
