@@ -19,7 +19,7 @@ const state = {
   thinking:       localStorage.getItem('aurora_thinking') !== 'false',
   learn:          localStorage.getItem('aurora_learn') === 'true',
   debug:          localStorage.getItem('aurora_debug') === 'true',
-  secure:         localStorage.getItem('aurora_secure') === 'true',
+  secure:         localStorage.getItem('aurora_secure') !== 'false',
 };
 
 // ─── Marked + highlight.js setup ─────────────────────────────────────────────
@@ -247,7 +247,11 @@ async function approveToolCall(toolId, approve) {
     await fetch(API('/api/tool_approve'), {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ tool_id: toolId, approve }),
+      body: JSON.stringify({
+        conversation_id: state.conversationId,
+        tool_id: toolId,
+        approve,
+      }),
     });
   } catch (e) {
     console.warn('Tool approval failed:', e);
