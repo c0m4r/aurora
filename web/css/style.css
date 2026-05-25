@@ -533,6 +533,16 @@ body { font-family: var(--font-sans); background: var(--bg); color: var(--text);
   0%, 100% { opacity: 0.55; }
   50%      { opacity: 1; }
 }
+.tool-approval-warning {
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--yellow, #d29922);
+  border-radius: 6px;
+  background: rgba(210, 153, 34, 0.12);
+  color: var(--yellow, #d29922);
+  font-size: 13px;
+  line-height: 1.4;
+}
 .tool-approval {
   display: flex;
   gap: 8px;

@@ -1179,6 +1179,13 @@ async function sendMessage(text, images, videos) {
           hideGeneratingPlaceholder();
           const entry = toolBlocks[event.id];
           if (entry && !entry.block.querySelector('.tool-approval')) {
+            const body = entry.block.querySelector('.tool-body');
+            if (event.warning) {
+              const warn = document.createElement('div');
+              warn.className = 'tool-approval-warning';
+              warn.textContent = '⚠ ' + event.warning;
+              body.prepend(warn);
+            }
             const bar = document.createElement('div');
             bar.className = 'tool-approval';
             bar.innerHTML = `
@@ -1193,7 +1200,7 @@ async function sendMessage(text, images, videos) {
               bar.remove();
               approveToolCall(event.id, false);
             });
-            entry.block.querySelector('.tool-body').prepend(bar);
+            body.prepend(bar);
             entry.block.classList.add('open');
             entry.statusEl.className = 'tool-status awaiting';
             entry.statusEl.innerHTML = '⏸ Awaiting approval';
@@ -1207,6 +1214,8 @@ async function sendMessage(text, images, videos) {
           if (entry) {
             const bar = entry.block.querySelector('.tool-approval');
             if (bar) bar.remove();
+            const warn = entry.block.querySelector('.tool-approval-warning');
+            if (warn) warn.remove();
             if (event.approved) {
               entry.statusEl.className = 'tool-status running';
               entry.statusEl.innerHTML = '<span class="spinner"></span>';

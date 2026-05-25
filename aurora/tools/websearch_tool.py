@@ -119,6 +119,19 @@ class WebSearchTool(BaseTool):
         except Exception:
             return False
 
+    def approval_warning(self, tool_input: dict) -> str | None:
+        url = tool_input.get("url")
+        if not url or self._is_whitelisted(url):
+            return None
+        try:
+            host = urlparse(url).netloc or url
+        except Exception:
+            host = url
+        return (
+            f"Domain '{host}' is NOT on the configured whitelist. "
+            "Approving will fetch it anyway for this call only."
+        )
+
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="web",
@@ -178,10 +191,11 @@ class WebSearchTool(BaseTool):
         url: str | None = None,
         num_results: int | None = None,
         fetch_content: bool | None = None,
+        _secure_override: bool = False,
         **_,
     ) -> str:
         if url:
-            return await self._fetch_url(url)
+            return await self._fetch_url(url, override_whitelist=_secure_override)
         if query:
             return await self._search(
                 query,
@@ -192,8 +206,8 @@ class WebSearchTool(BaseTool):
 
     # ── Direct URL fetch ──────────────────────────────────────────────────────
 
-    async def _fetch_url(self, url: str) -> str:
-        if not self._is_whitelisted(url):
+    async def _fetch_url(self, url: str, override_whitelist: bool = False) -> str:
+        if not override_whitelist and not self._is_whitelisted(url):
             host = urlparse(url).netloc
             return (
                 f"⚠️ Domain '{host}' is not on the whitelist.\n\n"

@@ -269,8 +269,13 @@ class AgentLoop:
 
             # Secure mode: ask the user to approve each tool call before running it.
             approvals: dict[str, bool] = {}
+            warned: set[str] = set()
             if secure:
                 for tc in tool_calls_this_turn:
+                    tool = self.tools.get(tc["name"])
+                    warning = tool.approval_warning(tc["input"]) if tool else None
+                    if warning:
+                        warned.add(tc["id"])
                     fut: asyncio.Future = asyncio.get_running_loop().create_future()
                     key = f"{self.conversation_id or ''}:{tc['id']}"
                     _pending_approvals[key] = fut
@@ -279,6 +284,7 @@ class AgentLoop:
                         "id": tc["id"],
                         "name": tc["name"],
                         "input": tc["input"],
+                        "warning": warning,
                     }
                     try:
                         approved = await asyncio.wait_for(fut, timeout=_APPROVAL_TIMEOUT)
@@ -309,7 +315,11 @@ class AgentLoop:
                 async def on_progress(chunk: str) -> None:
                     await progress_queue.put((tc["id"], chunk))
 
-                return await self._exec_tool(tc, on_progress=on_progress)
+                return await self._exec_tool(
+                    tc,
+                    on_progress=on_progress,
+                    secure_override=tc["id"] in warned,
+                )
 
             exec_tasks = [
                 asyncio.create_task(_run_or_decline(tc))
@@ -363,11 +373,14 @@ class AgentLoop:
         self,
         tc: dict,
         on_progress: Any = None,
+        secure_override: bool = False,
     ) -> tuple[str, str, bool]:
         try:
             kwargs = dict(tc["input"])
             if on_progress is not None:
                 kwargs["_progress_cb"] = on_progress
+            if secure_override:
+                kwargs["_secure_override"] = True
             result = await asyncio.wait_for(
                 self.tools.execute(tc["name"], **kwargs),
                 timeout=self._tool_timeout,
