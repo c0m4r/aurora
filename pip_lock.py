@@ -1,12 +1,12 @@
 #!.venv/bin/python
-"""Generate a requirements.txt with hashes from a pinned requirements.lock file.
+"""Generate a hashed lock file from a `pip freeze` output.
 
 Usage:
-    python pip_freeze.py [lock_file] [output_file]
+    python pip_lock.py [freeze_file] [output_file]
 
 Defaults:
-    lock_file  = requirements.lock
-    output_file = requirements.txt
+    freeze_file = requirements.freeze.txt
+    output_file = requirements.lock.txt
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import urllib.error
 import urllib.request
 
 
-def parse_lock(filepath: str) -> list[tuple[str, str, str]]:
-    """Parse a lock file, returning (name, version, original_line) tuples."""
+def parse_freeze(filepath: str) -> list[tuple[str, str, str]]:
+    """Parse a `pip freeze` file, returning (name, version, original_line) tuples."""
     packages: list[tuple[str, str, str]] = []
     skipped = 0
     with open(filepath) as f:
@@ -45,7 +45,7 @@ def fetch_hashes(name: str, version: str) -> list[str]:
     """Fetch SHA256 hashes from PyPI JSON API for a given package version."""
     url = f"https://pypi.org/pypi/{name}/{version}/json"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "pip_freeze/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "pip_lock/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
@@ -72,14 +72,14 @@ def fetch_hashes(name: str, version: str) -> list[str]:
 
 
 def main() -> None:
-    lock_file = sys.argv[1] if len(sys.argv) > 1 else "requirements.lock"
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "requirements.txt"
+    freeze_file = sys.argv[1] if len(sys.argv) > 1 else "requirements.freeze.txt"
+    output_file = sys.argv[2] if len(sys.argv) > 2 else "requirements.lock.txt"
 
-    print(f"[info] reading {lock_file}")
+    print(f"[info] reading {freeze_file}")
     try:
-        packages = parse_lock(lock_file)
+        packages = parse_freeze(freeze_file)
     except FileNotFoundError:
-        print(f"[error] {lock_file} not found", file=sys.stderr)
+        print(f"[error] {freeze_file} not found", file=sys.stderr)
         sys.exit(1)
 
     if not packages:
