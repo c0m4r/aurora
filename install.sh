@@ -48,6 +48,9 @@ echo -e "\n${GREEN}✅ Dependencies installed${NC}"
 # Create default config if not present
 if [ ! -f "config.yaml" ]; then
   cp config.example.yaml config.yaml
+  API_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+  sed -i "s|^  api_key: \"\"\$|  api_key: \"$API_KEY\"|" config.yaml
+  echo -e "${GREEN}🔑 Generated server api_key in config.yaml${NC}"
 fi
 
 echo ""
