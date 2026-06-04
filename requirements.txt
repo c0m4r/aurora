@@ -9,7 +9,7 @@ openai==2.37.0
 pydantic==2.13.4
 pyyaml==6.0.3
 rich==15.0.0
-starlette==1.0.0
+starlette==1.0.1
 trafilatura==2.0.0
 typer==0.25.1
 uvicorn[standard]==0.47.0
