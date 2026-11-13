@@ -30,19 +30,19 @@ fi
 
 echo -e "${GREEN}✅ Python version OK${NC}"
 
-# Create venv if not present
-if [ ! -d ".venv" ]; then
-  echo -e "${BLUE}📦 Creating virtual environment…${NC}"
-  python3 -m venv .venv
-else
-  echo -e "${GREEN}✅ Virtual environment exists${NC}"
+# Check uv
+if ! command -v uv &>/dev/null; then
+  echo -e "${RED}❌ ERROR: uv required, see https://docs.astral.sh/uv/getting-started/installation/${NC}"
+  exit 1
 fi
 
-source .venv/bin/activate
+echo -e "${GREEN}✅ $(uv --version | cut -d' ' -f1-2) found${NC}"
 
 echo -e "${BLUE}📦 Installing dependencies…${NC}\n"
-pip install --upgrade pip==26.1.2
-pip install --uploaded-prior-to="$(date +\%Y-\%m-\%d -d "7days ago")" --require-hashes -r requirements.lock.txt
+# Installs exactly what uv.lock pins (hash-verified) into .venv. --locked
+# refuses to re-resolve, so a lockfile out of sync with pyproject.toml or its
+# 7-day cooldown fails here instead of pulling in fresh releases.
+uv sync --locked
 echo -e "\n${GREEN}✅ Dependencies installed${NC}"
 
 # Create default config if not present

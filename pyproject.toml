@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aurora"
-version = "0.9.2"
+version = "0.9.3"
 description = "General purpose AI assistant"
 requires-python = ">=3.11"
 authors = [
@@ -15,6 +15,23 @@ maintainers = [
 ]
 readme = "README.md"
 license = "AGPL-3.0-or-later"
+dependencies = [
+  "aiosqlite>=0.22.1",
+  "anthropic>=0.120.0",
+  "asyncssh>=2.24.0",
+  "beautifulsoup4>=4.15.0",
+  "defusedxml>=0.7.1",
+  "fastapi>=0.140.0",
+  "httpx[http2]>=0.28.1",
+  "openai>=2.48.0",
+  "pydantic>=2.13.4",
+  "pyyaml>=6.0.3",
+  "rich>=15.0.0",
+  "starlette>=1.3.1",
+  "trafilatura>=2.1.0",
+  "typer>=0.27.0",
+  "uvicorn[standard]>=0.51.0",
+]
 
 [project.scripts]
 aurora-server = "aurora.api.app:run"
@@ -23,3 +40,15 @@ aurora = "cli.main:app"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["aurora*", "cli*"]
+
+[tool.uv]
+required-version = ">=0.12"
+# Supply-chain cooldown: never resolve anything uploaded to PyPI in the last
+# 7 days, giving the community time to spot and yank compromised releases.
+# Check for updates with ./deps.py; bypass the cooldown for a single package
+# (security fixes) with ./deps.py security PACKAGE[==VERSION].
+exclude-newer = "7 days"
+
+# Per-package cooldown overrides, managed by ./deps.py (security / prune).
+# Each entry lets one package resolve uploads up to the given UTC timestamp.
+[tool.uv.exclude-newer-package]

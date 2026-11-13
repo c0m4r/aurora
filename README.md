@@ -30,13 +30,15 @@ Ask questions, diagnose problems, run commands on remote servers, search the web
 
 ## Quick Start
 
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.12+.
+
 ```bash
 git clone https://github.com/c0m4r/aurora.git
 cd aurora
 ./install.sh
 ```
 
-The installer creates a virtual environment, installs dependencies, and copies `config.example.yaml` → `config.yaml` if it doesn't exist.
+The installer creates a virtual environment, installs the dependencies pinned in `uv.lock`, and copies `config.example.yaml` → `config.yaml` if it doesn't exist.
 
 Start the server with:
 
@@ -169,9 +171,8 @@ Open **http://localhost:8000** after starting the server.
 Thin client that connects to any running server — install it on any machine.
 
 ```bash
-pip install -e .
-# or run directly without installing:
-python cli/main.py
+uv sync --locked   # or ./install.sh
+uv run aurora      # or activate .venv and run: aurora
 ```
 
 **Interactive:**
@@ -336,7 +337,22 @@ Overview:
 | `rich` + `typer` + `prompt_toolkit` | CLI |
 | `pyyaml` | Config file parsing |
 
-Full list: [requirements.lock](requirements.lock)
+Full list: [uv.lock](uv.lock)
+
+### Updates and supply-chain cooldown
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). `uv.lock` pins every package with hashes, and `install.sh` / `start.sh` run with `--locked`, so they never resolve anything new.
+
+Nothing uploaded to PyPI in the last **7 days** is ever locked (`exclude-newer = "7 days"` in `pyproject.toml`). That gives the community time to catch and yank a hijacked release before it reaches `uv.lock`. Use `deps.py` to work within that window:
+
+```bash
+./deps.py                          # updates, releases held back by the cooldown, known vulnerabilities (uv audit)
+./deps.py upgrade [PACKAGE ...]    # upgrade everything (or some packages) within the cooldown
+./deps.py security PACKAGE==VER -m "CVE-..."   # bypass the cooldown for one package to ship a security fix now
+./deps.py prune                    # drop overrides once the 7-day window has caught up with them
+```
+
+`security` adds a per-package entry to `[tool.uv.exclude-newer-package]` that admits uploads only up to that release (or up to now, if no version is given). It then upgrades just that package. Every other package stays under the cooldown. Commit `pyproject.toml` and `uv.lock` afterwards.
 
 ---
 
