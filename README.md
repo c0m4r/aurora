@@ -30,7 +30,7 @@ Ask questions, diagnose problems, run commands on remote servers, search the web
 
 ## Quick Start
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.12+.
+Requires Python 3.11.5+ and [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.12+.
 
 ```bash
 git clone https://github.com/c0m4r/aurora.git

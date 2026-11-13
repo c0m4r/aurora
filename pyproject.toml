@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "aurora"
 version = "0.9.3"
 description = "General purpose AI assistant"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 authors = [
   { name = "c0m4r"}
 ]
@@ -43,6 +43,9 @@ include = ["aurora*", "cli*"]
 
 [tool.uv]
 required-version = ">=0.12"
+# soupsieve < 4.0 has known DoS vulnerabilities (GHSA-mmhr-3c5m-f64f and
+# others). 3.0+ needs Python 3.11.5+, hence requires-python above.
+constraint-dependencies = ["soupsieve>=4.0.1"]
 # Supply-chain cooldown: never resolve anything uploaded to PyPI in the last
 # 7 days, giving the community time to spot and yank compromised releases.
 # Check for updates with ./deps.py; bypass the cooldown for a single package

@@ -18,13 +18,12 @@ echo ""
 
 # Check Python
 if ! command -v python3 &>/dev/null; then
-  echo -e "${RED}❌ ERROR: Python 3.11+ required${NC}"
+  echo -e "${RED}❌ ERROR: Python 3.11.5+ required${NC}"
   exit 1
 fi
 
-PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')")
-if [ "$PY_VER" -lt "311" ]; then
-  echo -e "${RED}❌ ERROR: Python 3.11+ required (found $(python3 --version))${NC}"
+if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 11, 5))"; then
+  echo -e "${RED}❌ ERROR: Python 3.11.5+ required (found $(python3 --version))${NC}"
   exit 1
 fi
 
